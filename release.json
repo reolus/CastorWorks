@@ -1,10 +1,17 @@
 {
   "product": "CastorWorks",
-  "version": "0.33.5",
-  "name": "AI Security and Policy Completion",
-  "baseline": "v0.33.4",
+  "version": "0.34.0",
+  "branch": "release/0.34-commercial-contracts",
+  "baseline": "v0.33.5",
+  "release_type": "milestone",
   "minimum_php": "8.2",
-  "migrations": ["database/migrate_phase33_5.sql"],
+  "migration": "database/migrate_phase34_0.sql",
+  "workers": [
+    "scripts/generate-contract-jobs.php",
+    "scripts/generate-contract-invoices.php",
+    "scripts/monitor-contract-renewals.php",
+    "scripts/monitor-contract-slas.php"
+  ],
   "breaking_changes": [],
-  "notes": "Completes the initial AI program with configurable redaction, retention, role budgets, provider testing, failure logging, exports, and audit reporting."
+  "notes": "Direct replacement and new files only; no source patch script."
 }

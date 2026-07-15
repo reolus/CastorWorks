@@ -1,19 +1,15 @@
-# CastorWorks 0.33.5
+# CastorWorks Changelog
 
-## Added
-- Configurable AI redaction policy for email, phone, street address, and custom regular expressions.
-- AI record-retention and draft-expiration controls.
-- Per-role AI request and cost budgets.
-- Provider connection test with latency reporting.
-- AI usage CSV export.
-- AI failure logging and administrator visibility.
-- AI audit activity summary.
-- Scheduled pruning and draft-expiration worker.
+## 0.34.0 - Commercial Contracts
 
-## Changed
-- AI provider timeouts are now policy-controlled.
-- Prompts and aggregate context are redacted before provider submission when redaction is enabled.
-- Provider failures are stored in the AI usage ledger.
-
-## Fixed
-- AI governance can now enforce global, per-user, and per-role limits together.
+- Added parent commercial contract records linked to existing customers.
+- Added multi-location contract assignments and location contacts.
+- Added recurring service schedules with weekly through custom frequencies.
+- Added corporate or per-location billing policy fields.
+- Added recurring job and recurring invoice generation workers.
+- Added contract SLA rules and SLA monitoring.
+- Added contract versions, amendments, events, and status history.
+- Added purchase-order limits, expiration tracking, and location-specific POs.
+- Added compliance document tracking for insurance, W-9, safety, licensing, and customer requirements.
+- Added renewal monitoring and automatic renewal support.
+- Rebuilt the existing Agreements page into the Commercial Contracts dashboard while retaining legacy agreement signing routes.
