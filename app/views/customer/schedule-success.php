@@ -1,0 +1,1 @@
+<section class="py-5"><div class="container text-center" style="max-width:700px"><i class="fa-solid fa-calendar-check fa-3x text-primary mb-3"></i><h1>Request received</h1><p class="lead">The office will review availability and confirm the appointment. Your calendar remains innocent until then.</p></div></section>

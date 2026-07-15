@@ -1,0 +1,20 @@
+{
+    "name": "rockbluffs/exterior-services-portal",
+    "description": "Rock Bluffs Exterior Services operations portal",
+    "type": "project",
+    "require": {
+        "php": ">=8.2",
+        "aws/aws-sdk-php": "^3.388",
+        "dompdf/dompdf": "^3.1",
+        "endroid/qr-code": "^6.1"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "autoload": {
+        "classmap": [
+            "app/"
+        ]
+    }
+}

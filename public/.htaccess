@@ -1,0 +1,11 @@
+Options -Indexes
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]
+
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
+
+# Uploaded job photos are served from a protected application directory through an alias in Apache.

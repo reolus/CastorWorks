@@ -1,0 +1,7 @@
+<?php
+namespace App\Controllers;
+use App\Core\Auth; use App\Core\Database; use App\Core\View;
+final class JobCostController
+{
+ public function index():void{Auth::requireLogin();$from=$_GET['from']??date('Y-m-01');$to=$_GET['to']??date('Y-m-t');$q=Database::connection()->prepare("SELECT j.id,j.job_number,j.service_summary,j.status,CONCAT(c.first_name,' ',c.last_name) customer,COALESCE(i.total,0) revenue,COALESCE(l.labor_cost,0) labor_cost,COALESCE(m.material_cost,0) material_cost,COALESCE(v.vehicle_cost,0) vehicle_cost,(COALESCE(i.total,0)-COALESCE(l.labor_cost,0)-COALESCE(m.material_cost,0)-COALESCE(v.vehicle_cost,0)) gross_profit FROM jobs j JOIN customers c ON c.id=j.customer_id LEFT JOIN invoices i ON i.job_id=j.id AND i.status<>'void' LEFT JOIN (SELECT job_id,SUM((TIMESTAMPDIFF(MINUTE,clock_in,clock_out)-break_minutes)/60*COALESCE(hourly_cost,0)) labor_cost FROM time_entries WHERE clock_out IS NOT NULL GROUP BY job_id) l ON l.job_id=j.id LEFT JOIN (SELECT job_id,SUM(quantity*COALESCE(unit_cost,0)) material_cost FROM job_inventory_usage GROUP BY job_id) m ON m.job_id=j.id LEFT JOIN (SELECT job_id,SUM(GREATEST(TIMESTAMPDIFF(MINUTE,clock_in,clock_out)-break_minutes,0)/60*8) vehicle_cost FROM time_entries WHERE vehicle_id IS NOT NULL AND clock_out IS NOT NULL GROUP BY job_id) v ON v.job_id=j.id WHERE DATE(COALESCE(j.scheduled_start,j.created_at)) BETWEEN ? AND ? ORDER BY gross_profit ASC");$q->execute([$from,$to]);View::render('portal/job-costs/index',['title'=>'Job cost analysis','rows'=>$q->fetchAll(),'from'=>$from,'to'=>$to],'portal');}
+}

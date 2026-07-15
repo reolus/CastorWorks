@@ -1,0 +1,2 @@
+<?php
+require dirname(__DIR__).'/app/core/Env.php';\App\Core\Env::load(dirname(__DIR__).'/.env');spl_autoload_register(function($c){$p='App\\';if(str_starts_with($c,$p)){ $f=dirname(__DIR__).'/app/'.str_replace('\\','/',substr($c,strlen($p))).'.php';if(is_file($f))require $f;}});require dirname(__DIR__).'/app/helpers/functions.php';$ids=\App\Core\Database::connection()->query('SELECT id FROM properties')->fetchAll(PDO::FETCH_COLUMN);foreach($ids as $id){\App\Services\TerritoryAssignmentService::assign((int)$id);}echo 'Assigned territories for '.count($ids)." properties.\n";

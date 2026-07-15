@@ -1,0 +1,5 @@
+<div class="mb-4"><h1 class="h3">Deployment Health</h1><p class="text-muted">Required services, optional add-ins, and current integration readiness.</p></div>
+<div class="row g-3"><?php foreach($checks as $c):
+ $style=match($c['status']){'ok'=>'success','warning'=>'warning','failed'=>'danger',default=>'secondary'};
+ $icon=match($c['status']){'ok'=>'circle-check','warning'=>'triangle-exclamation','failed'=>'circle-xmark',default=>'circle-minus'};
+?><div class="col-md-6 col-xl-4"><div class="card h-100 integration-health-card"><div class="card-body d-flex gap-3"><div class="fs-3 text-<?=$style?>"><i class="fa-solid fa-<?=$icon?>"></i></div><div><div class="d-flex align-items-center gap-2"><h2 class="h6 mb-1"><?=e($c['name'])?></h2><?php if($c['status']==='disabled'):?><span class="badge text-bg-secondary">Disabled</span><?php endif?></div><p class="mb-0 text-muted small"><?=e($c['detail'])?></p><?php if(!empty($c['last_tested_at'])):?><small class="text-muted">Last tested <?=e($c['last_tested_at'])?></small><?php endif?></div></div></div></div><?php endforeach?></div>

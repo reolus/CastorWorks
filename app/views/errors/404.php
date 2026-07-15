@@ -1,0 +1,1 @@
+<section class="py-5"><div class="container text-center py-5"><h1 class="display-1 fw-bold">404</h1><p class="lead">That page wandered off, possibly to avoid being pressure washed.</p><a class="btn btn-primary" href="/">Return Home</a></div></section>

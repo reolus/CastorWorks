@@ -1,0 +1,1 @@
+<div class="card border-0 shadow-sm"><div class="card-body p-5 text-center"><i class="fa-solid fa-lock fa-3x text-warning mb-3"></i><h1 class="h3">Access denied</h1><p class="text-muted">Your current portal role does not permit this action.</p><a class="btn btn-primary" href="/portal">Return to dashboard</a></div></div>

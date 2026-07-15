@@ -1,0 +1,6 @@
+.bi-kpi-card{border:0;box-shadow:0 .4rem 1.2rem rgba(16,42,67,.08)}
+.bi-kpi-icon{display:grid;place-items:center;width:2.75rem;height:2.75rem;border-radius:.85rem;font-size:1.1rem;flex:0 0 auto}
+.bi-chart-wrap{position:relative;height:340px}.bi-chart-wrap-small{height:220px}
+.bi-mini-stat{height:100%;padding:1rem;border:1px solid var(--bs-border-color);border-radius:.8rem;background:var(--bs-tertiary-bg)}
+.bi-mini-stat span,.bi-mini-stat small{display:block;color:var(--bs-secondary-color)}.bi-mini-stat strong{display:block;font-size:1.65rem;line-height:1.2;margin:.25rem 0}
+@media(max-width:767.98px){.bi-chart-wrap{height:280px}.bi-kpi-grid .fs-3{font-size:1.45rem!important}}

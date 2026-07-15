@@ -1,0 +1,6 @@
+<?php
+namespace App\Controllers;
+use App\Core\Auth;use App\Core\Database;
+final class JobInventoryController{
+ public function use(string $id):void{Auth::requireRole('owner','office','crew_leader','technician');verify_csrf();$item=(int)$_POST['inventory_item_id'];$qty=(float)$_POST['quantity'];if($qty<=0){flash('danger','Quantity must be greater than zero.');redirect('/portal/jobs/'.$id);}$db=Database::connection();$db->beginTransaction();try{$s=$db->prepare('SELECT quantity,unit_cost FROM inventory_items WHERE id=? FOR UPDATE');$s->execute([$item]);$row=$s->fetch();if(!$row||$row['quantity']<$qty)throw new \RuntimeException('Insufficient inventory.');$db->prepare('UPDATE inventory_items SET quantity=quantity-? WHERE id=?')->execute([$qty,$item]);$db->prepare('INSERT INTO job_inventory_usage(job_id,inventory_item_id,quantity,unit_cost,created_by) VALUES(?,?,?,?,?)')->execute([(int)$id,$item,$qty,$row['unit_cost'],Auth::id()]);$db->prepare("INSERT INTO inventory_transactions(inventory_item_id,transaction_type,quantity,reference_type,reference_id,notes,created_by) VALUES(?,'use',?,'job',?,'Automatic job consumption',?)")->execute([$item,-$qty,(int)$id,Auth::id()]);$db->commit();flash('success','Inventory usage recorded.');}catch(\Throwable $e){$db->rollBack();flash('danger',$e->getMessage());}redirect('/portal/jobs/'.$id);}
+}

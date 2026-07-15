@@ -1,0 +1,1 @@
+<section class="py-5"><div class="container text-center"><i class="fa-solid fa-file-signature fa-3x text-success mb-3"></i><h1>Agreement signed</h1><p class="lead">Thank you. Rock Bluffs Exterior Services has recorded your signature.</p></div></section>
