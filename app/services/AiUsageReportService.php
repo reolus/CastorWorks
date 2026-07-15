@@ -82,4 +82,27 @@ final class AiUsageReportService
              LIMIT 100"
         )->fetchAll();
     }
+
+    /** @return list<array<string,mixed>> */
+    public function roleBudgets(): array
+    {
+        return $this->pdo->query(
+            "SELECT role_name,daily_request_limit,monthly_request_limit,monthly_cost_limit_usd,active,updated_at
+             FROM ai_role_budgets
+             ORDER BY role_name"
+        )->fetchAll();
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function failures(): array
+    {
+        return $this->pdo->query(
+            "SELECT l.*,u.name user_name
+             FROM ai_usage_logs l
+             LEFT JOIN users u ON u.id=l.user_id
+             WHERE l.status<>'success'
+             ORDER BY l.created_at DESC,l.id DESC
+             LIMIT 100"
+        )->fetchAll();
+    }
 }

@@ -89,18 +89,32 @@ final class AiProviderService
         $this->enforceUsageLimits($settings);
         $system = trim((string) ($settings['system_prompt'] ?? ''));
         $contextText = $context === [] ? '' : "\n\nOperational context (aggregate data only):\n" . json_encode($context, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ((bool) ($settings['redact_sensitive_data'] ?? true)) {
+            $policy = new AiPolicyService($this->pdo);
+            $prompt = $policy->redact($prompt);
+            $contextText = $policy->redact($contextText);
+        }
         $messages = [
             ['role' => 'system', 'content' => $system],
             ['role' => 'user', 'content' => $prompt . $contextText],
         ];
 
         $started = microtime(true);
-        $content = match ($provider) {
-            'openai' => $this->openAi($messages, $model, $settings),
-            'azure_openai' => $this->azureOpenAi($messages, $model, $settings),
-            'ollama' => $this->ollama($messages, $model, $settings),
-            default => throw new RuntimeException('Unsupported AI provider: ' . $provider),
-        };
+        try {
+            $content = match ($provider) {
+                'openai' => $this->openAi($messages, $model, $settings),
+                'azure_openai' => $this->azureOpenAi($messages, $model, $settings),
+                'ollama' => $this->ollama($messages, $model, $settings),
+                default => throw new RuntimeException('Unsupported AI provider: ' . $provider),
+            };
+        } catch (Throwable $e) {
+            try {
+                $this->pdo->prepare("INSERT INTO ai_usage_logs(user_id,provider,model,purpose,prompt_hash,input_chars,output_chars,estimated_cost_usd,status,latency_ms,error_message,created_at) VALUES(NULL,?,?,?,?,?,0,0,'failed',?,?,NOW())")
+                    ->execute([$provider, $model, $purpose, hash('sha256', $prompt), strlen($prompt . $contextText), (int) round((microtime(true) - $started) * 1000), mb_substr($e->getMessage(), 0, 2000)]);
+            } catch (Throwable) {
+            }
+            throw $e;
+        }
 
         return [
             'content' => $content,
@@ -109,6 +123,24 @@ final class AiProviderService
             'latency_ms' => (int) round((microtime(true) - $started) * 1000),
             'input_chars' => strlen($prompt . $contextText),
             'output_chars' => strlen($content),
+        ];
+    }
+
+
+    /** @return array{name:string,status:string,detail:string,latency_ms:int} */
+    public function testConnection(): array
+    {
+        $started = microtime(true);
+        $result = $this->ask('Reply with exactly: CASTORWORKS_AI_OK', 'provider_test');
+        $ok = str_contains(strtoupper((string) $result['content']), 'CASTORWORKS_AI_OK');
+        if (!$ok) {
+            throw new RuntimeException('The provider responded, but the validation phrase was not returned.');
+        }
+        return [
+            'name' => 'AI Assistant',
+            'status' => 'ok',
+            'detail' => ucfirst(str_replace('_', ' ', (string) $result['provider'])) . ' responded successfully',
+            'latency_ms' => (int) round((microtime(true) - $started) * 1000),
         ];
     }
 
@@ -202,7 +234,7 @@ final class AiProviderService
             CURLOPT_POST => true,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_CONNECTTIMEOUT => 10,
-            CURLOPT_TIMEOUT => 90,
+            CURLOPT_TIMEOUT => max(10, min(300, (int) ((new AiPolicyService($this->pdo))->settings()['provider_timeout_seconds'] ?? 90))),
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_POSTFIELDS => json_encode($payload, JSON_THROW_ON_ERROR),
         ]);

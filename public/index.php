@@ -62,4 +62,8 @@ $r->post('/portal/ai/settings',[\App\Controllers\AiAssistantController::class,'u
 $r->post('/portal/ai/prompts',[\App\Controllers\AiAssistantController::class,'savePrompt']);
 $r->post('/portal/ai/prompts/{id}/rollback',[\App\Controllers\AiAssistantController::class,'rollbackPrompt']);
 $r->post('/portal/ai/budgets/{id}',[\App\Controllers\AiAssistantController::class,'updateBudget']);
+$r->post('/portal/ai/test-provider',[\App\Controllers\AiAssistantController::class,'testProvider']);
+$r->post('/portal/ai/policy',[\App\Controllers\AiAssistantController::class,'updatePolicy']);
+$r->post('/portal/ai/role-budget',[\App\Controllers\AiAssistantController::class,'updateRoleBudget']);
+$r->get('/portal/ai/export',[\App\Controllers\AiAssistantController::class,'exportUsage']);
 $r->dispatch($_SERVER['REQUEST_METHOD'],$_SERVER['REQUEST_URI']);

@@ -12,6 +12,8 @@ use App\Services\AiCostService;
 use App\Services\AiGovernanceService;
 use App\Services\AiDraftApplicationService;
 use App\Services\AiPromptHistoryService;
+use App\Services\AiPolicyService;
+use App\Services\AiAuditReportService;
 use App\Services\AiUsageReportService;
 use App\Services\AiOperationalService;
 use App\Services\AiProviderService;
@@ -25,7 +27,7 @@ final class AiAssistantController
         Auth::requireLogin();
         $pdo = Database::connection();
         $provider = new AiProviderService($pdo);
-        $usage = $prompts = $drafts = $providerUsage = $userUsage = $promptHistory = [];
+        $usage = $prompts = $drafts = $providerUsage = $userUsage = $promptHistory = $roleBudgets = $failures = $auditRows = [];
         $usageSummary = [];
         try {
             $usage = $pdo->query("SELECT l.*,u.name user_name FROM ai_usage_logs l LEFT JOIN users u ON u.id=l.user_id ORDER BY l.created_at DESC LIMIT 25")->fetchAll();
@@ -36,6 +38,9 @@ final class AiAssistantController
             $providerUsage = $reports->byProvider();
             $userUsage = $reports->byUser();
             $promptHistory = $reports->promptHistory();
+            $roleBudgets = $reports->roleBudgets();
+            $failures = $reports->failures();
+            $auditRows = (new AiAuditReportService($pdo))->recent();
         } catch (Throwable) {
         }
         View::render('portal/ai/index', [
@@ -49,6 +54,10 @@ final class AiAssistantController
             'providerUsage' => $providerUsage,
             'userUsage' => $userUsage,
             'promptHistory' => $promptHistory,
+            'roleBudgets' => $roleBudgets,
+            'failures' => $failures,
+            'auditRows' => $auditRows,
+            'policySettings' => (new AiPolicyService($pdo))->settings(),
             'answer' => $_SESSION['ai_answer'] ?? null,
             'lastPrompt' => $_SESSION['ai_prompt'] ?? '',
         ], 'portal');
@@ -307,6 +316,99 @@ final class AiAssistantController
         AuditService::log('ai.user_budget_updated', 'user', $id);
         flash('success', 'AI budget updated.');
         redirect('/portal/ai');
+    }
+
+    public function testProvider(): void
+    {
+        Auth::requireRole('owner', 'administrator');
+        verify_csrf();
+        $pdo = Database::connection();
+        try {
+            (new AiGovernanceService($pdo))->assertMonthlyBudgetAvailable();
+            $result = (new AiProviderService($pdo))->testConnection();
+            AuditService::log('ai.provider_test_success', 'ai_provider_settings', 1, ['latency_ms' => $result['latency_ms']]);
+            flash('success', 'AI provider test succeeded in ' . $result['latency_ms'] . ' ms.');
+        } catch (Throwable $e) {
+            $this->storeFailure('provider_test', 'provider test', $e);
+            AuditService::log('ai.provider_test_failed', 'ai_provider_settings', 1, ['error' => $e->getMessage()]);
+            flash('danger', 'AI provider test failed: ' . $e->getMessage());
+        }
+        redirect('/portal/ai');
+    }
+
+    public function updatePolicy(): void
+    {
+        Auth::requireRole('owner', 'administrator');
+        verify_csrf();
+        Database::connection()->prepare(
+            "UPDATE ai_policy_settings SET draft_retention_days=?,usage_retention_days=?,audit_retention_days=?,redact_email=?,redact_phone=?,redact_address=?,redact_customer_names=?,custom_redaction_patterns=?,draft_expiration_days=?,provider_timeout_seconds=?,updated_by=?,updated_at=NOW() WHERE id=1"
+        )->execute([
+            max(1, min(3650, (int) ($_POST['draft_retention_days'] ?? 90))),
+            max(1, min(3650, (int) ($_POST['usage_retention_days'] ?? 365))),
+            max(1, min(3650, (int) ($_POST['audit_retention_days'] ?? 730))),
+            isset($_POST['redact_email']) ? 1 : 0,
+            isset($_POST['redact_phone']) ? 1 : 0,
+            isset($_POST['redact_address']) ? 1 : 0,
+            isset($_POST['redact_customer_names']) ? 1 : 0,
+            trim((string) ($_POST['custom_redaction_patterns'] ?? '')),
+            max(1, min(365, (int) ($_POST['draft_expiration_days'] ?? 30))),
+            max(10, min(300, (int) ($_POST['provider_timeout_seconds'] ?? 90))),
+            Auth::id(),
+        ]);
+        AuditService::log('ai.policy_updated', 'ai_policy_settings', 1);
+        flash('success', 'AI security and retention policy updated.');
+        redirect('/portal/ai');
+    }
+
+    public function updateRoleBudget(): void
+    {
+        Auth::requireRole('owner', 'administrator');
+        verify_csrf();
+        $role = trim((string) ($_POST['role_name'] ?? ''));
+        $allowed = ['technician','estimator','crew_leader','office','owner','administrator'];
+        if (!in_array($role, $allowed, true)) {
+            flash('danger', 'Invalid role.');
+            redirect('/portal/ai');
+        }
+        Database::connection()->prepare(
+            "INSERT INTO ai_role_budgets(role_name,daily_request_limit,monthly_request_limit,monthly_cost_limit_usd,active,updated_by,updated_at) VALUES(?,?,?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE daily_request_limit=VALUES(daily_request_limit),monthly_request_limit=VALUES(monthly_request_limit),monthly_cost_limit_usd=VALUES(monthly_cost_limit_usd),active=VALUES(active),updated_by=VALUES(updated_by),updated_at=NOW()"
+        )->execute([
+            $role,
+            max(0, (int) ($_POST['daily_request_limit'] ?? 0)),
+            max(0, (int) ($_POST['monthly_request_limit'] ?? 0)),
+            max(0, (float) ($_POST['monthly_cost_limit_usd'] ?? 0)),
+            isset($_POST['active']) ? 1 : 0,
+            Auth::id(),
+        ]);
+        AuditService::log('ai.role_budget_updated', 'ai_role_budget', 0, ['role' => $role]);
+        flash('success', 'AI role budget updated.');
+        redirect('/portal/ai');
+    }
+
+    public function exportUsage(): void
+    {
+        Auth::requireRole('owner', 'administrator');
+        $pdo = Database::connection();
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="castorworks-ai-usage-' . date('Y-m-d') . '.csv"');
+        $out = fopen('php://output', 'wb');
+        fputcsv($out, ['created_at','user','provider','model','purpose','status','latency_ms','input_chars','output_chars','estimated_cost_usd','error_message']);
+        $rows = $pdo->query("SELECT l.*,u.name user_name FROM ai_usage_logs l LEFT JOIN users u ON u.id=l.user_id ORDER BY l.created_at DESC")->fetchAll();
+        foreach ($rows as $row) {
+            fputcsv($out, [$row['created_at'],$row['user_name'] ?? '',$row['provider'],$row['model'],$row['purpose'],$row['status'],$row['latency_ms'],$row['input_chars'],$row['output_chars'],$row['estimated_cost_usd'],$row['error_message'] ?? '']);
+        }
+        fclose($out);
+        exit;
+    }
+
+    private function storeFailure(string $purpose, string $prompt, Throwable $e): void
+    {
+        try {
+            $settings = (new AiGovernanceService(Database::connection()))->settings();
+            Database::connection()->prepare("INSERT INTO ai_usage_logs(user_id,provider,model,purpose,prompt_hash,input_chars,output_chars,estimated_cost_usd,status,latency_ms,error_message,created_at) VALUES(?,?,?,?,?,?,0,0,'failed',0,?,NOW())")
+                ->execute([Auth::id(), (string) ($settings['provider'] ?? 'unknown'), (string) ($settings['model'] ?? ''), $purpose, hash('sha256', $prompt), strlen($prompt), mb_substr($e->getMessage(), 0, 2000)]);
+        } catch (Throwable) {
+        }
     }
 
     private function storeUsage(array $result, string $purpose, string $prompt): void

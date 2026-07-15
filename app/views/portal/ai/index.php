@@ -85,7 +85,7 @@ $statusClass = match ($health['status'] ?? 'warning') { 'ok' => 'success', 'fail
         <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="approval_required_customer_reply" id="approveReply" <?=($settings['approval_required_customer_reply']??1)?'checked':''?>><label class="form-check-label" for="approveReply">Require customer-reply approval</label></div>
         <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="approval_required_other" id="approveOther" <?=($settings['approval_required_other']??0)?'checked':''?>><label class="form-check-label" for="approveOther">Require approval for internal recommendations</label></div>
         <label class="form-label">System instructions</label><textarea class="form-control mb-3" rows="5" name="system_prompt"><?=e($settings['system_prompt'])?></textarea>
-        <button class="btn btn-outline-primary w-100">Save provider settings</button>
+        <button class="btn btn-outline-primary w-100 mb-2">Save provider settings</button></form><form method="post" action="/portal/ai/test-provider"><?=csrf_field()?><button class="btn btn-outline-success w-100">Test configured provider</button>
       </form>
     </div>
     <?php endif?>
@@ -102,6 +102,40 @@ $statusClass = match ($health['status'] ?? 'warning') { 'ok' => 'success', 'fail
     <div class="card card-body mb-4">
       <h2 class="h5">User AI budgets</h2>
       <?php foreach($userUsage as $row):?><form method="post" action="/portal/ai/budgets/<?=$row['user_id']?>" class="border rounded p-2 mb-2"><?=csrf_field()?><div class="fw-semibold"><?=e($row['name'])?> <small class="text-muted"><?=e($row['role'])?> · <?=e($row['requests'])?> request(s) · $<?=number_format((float)$row['estimated_cost'],4)?></small></div><div class="row g-1 mt-1"><div class="col-4"><input class="form-control form-control-sm" type="number" min="0" name="daily_request_limit" value="<?=e($row['daily_request_limit']??0)?>" title="Daily request limit"></div><div class="col-4"><input class="form-control form-control-sm" type="number" min="0" name="monthly_request_limit" value="<?=e($row['monthly_request_limit']??0)?>" title="Monthly request limit"></div><div class="col-4"><input class="form-control form-control-sm" type="number" min="0" step="0.01" name="monthly_cost_limit_usd" value="<?=e($row['monthly_cost_limit_usd']??0)?>" title="Monthly cost limit"></div></div><button class="btn btn-sm btn-outline-primary mt-2">Save budget</button></form><?php endforeach?>
+    </div>
+    <?php endif?>
+
+    <?php if($canConfigure):?>
+    <div class="card card-body mb-4">
+      <div class="d-flex justify-content-between align-items-center mb-2"><h2 class="h5 mb-0">AI security and retention</h2><a class="btn btn-sm btn-outline-secondary" href="/portal/ai/export">Export usage CSV</a></div>
+      <form method="post" action="/portal/ai/policy"><?=csrf_field()?>
+        <div class="row g-2 mb-2"><div class="col"><label class="form-label">Draft retention days</label><input class="form-control" type="number" min="1" max="3650" name="draft_retention_days" value="<?=e($policySettings['draft_retention_days']??90)?>"></div><div class="col"><label class="form-label">Usage retention days</label><input class="form-control" type="number" min="1" max="3650" name="usage_retention_days" value="<?=e($policySettings['usage_retention_days']??365)?>"></div></div>
+        <div class="row g-2 mb-2"><div class="col"><label class="form-label">Audit retention days</label><input class="form-control" type="number" min="1" max="3650" name="audit_retention_days" value="<?=e($policySettings['audit_retention_days']??730)?>"></div><div class="col"><label class="form-label">Draft expires after days</label><input class="form-control" type="number" min="1" max="365" name="draft_expiration_days" value="<?=e($policySettings['draft_expiration_days']??30)?>"></div></div>
+        <label class="form-label">Provider timeout seconds</label><input class="form-control mb-2" type="number" min="10" max="300" name="provider_timeout_seconds" value="<?=e($policySettings['provider_timeout_seconds']??90)?>">
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="redact_email" id="redactEmail" <?=($policySettings['redact_email']??1)?'checked':''?>><label class="form-check-label" for="redactEmail">Redact email addresses</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="redact_phone" id="redactPhone" <?=($policySettings['redact_phone']??1)?'checked':''?>><label class="form-check-label" for="redactPhone">Redact phone numbers</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="redact_address" id="redactAddress" <?=($policySettings['redact_address']??1)?'checked':''?>><label class="form-check-label" for="redactAddress">Redact street addresses</label></div>
+        <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="redact_customer_names" id="redactNames" <?=($policySettings['redact_customer_names']??0)?'checked':''?>><label class="form-check-label" for="redactNames">Redact customer names where supported</label></div>
+        <label class="form-label">Custom PHP regex patterns, one per line</label><textarea class="form-control mb-2" rows="3" name="custom_redaction_patterns"><?=e($policySettings['custom_redaction_patterns']??'')?></textarea>
+        <button class="btn btn-outline-primary w-100">Save AI policy</button>
+      </form>
+    </div>
+
+    <div class="card card-body mb-4">
+      <h2 class="h5">Role AI budgets</h2>
+      <?php $roles=['technician','estimator','crew_leader','office','owner','administrator']; $budgetMap=[]; foreach($roleBudgets as $b){$budgetMap[$b['role_name']]=$b;} foreach($roles as $role): $b=$budgetMap[$role]??[];?><form method="post" action="/portal/ai/role-budget" class="border rounded p-2 mb-2"><?=csrf_field()?><input type="hidden" name="role_name" value="<?=e($role)?>"><div class="d-flex justify-content-between"><strong><?=e($role)?></strong><label class="form-check"><input class="form-check-input" type="checkbox" name="active" <?=($b['active']??0)?'checked':''?>> Active</label></div><div class="row g-1"><div class="col-4"><input class="form-control form-control-sm" type="number" min="0" name="daily_request_limit" value="<?=e($b['daily_request_limit']??0)?>" title="Daily requests"></div><div class="col-4"><input class="form-control form-control-sm" type="number" min="0" name="monthly_request_limit" value="<?=e($b['monthly_request_limit']??0)?>" title="Monthly requests"></div><div class="col-4"><input class="form-control form-control-sm" type="number" min="0" step="0.01" name="monthly_cost_limit_usd" value="<?=e($b['monthly_cost_limit_usd']??0)?>" title="Monthly USD"></div></div><button class="btn btn-sm btn-outline-primary mt-2">Save role budget</button></form><?php endforeach?>
+    </div>
+
+    <div class="card card-body mb-4">
+      <h2 class="h5">Recent AI failures</h2>
+      <?php foreach(array_slice($failures,0,10) as $failure):?><div class="small border-bottom py-2"><strong><?=e($failure['purpose'])?></strong> · <?=e($failure['provider'])?><br><span class="text-danger"><?=e($failure['error_message']??'Unknown failure')?></span><br><span class="text-muted"><?=e($failure['created_at'])?></span></div><?php endforeach?>
+      <?php if(!$failures):?><p class="text-muted mb-0">No AI failures recorded.</p><?php endif?>
+    </div>
+
+    <div class="card card-body mb-4">
+      <h2 class="h5">AI audit activity</h2>
+      <?php foreach(array_slice($auditRows,0,12) as $audit):?><div class="small border-bottom py-2"><strong><?=e($audit['action'])?></strong><br><?=e($audit['user_name']??'System')?> · <?=e($audit['created_at'])?></div><?php endforeach?>
+      <?php if(!$auditRows):?><p class="text-muted mb-0">No AI audit events recorded.</p><?php endif?>
     </div>
     <?php endif?>
 

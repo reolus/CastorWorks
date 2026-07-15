@@ -1,16 +1,5 @@
-# CastorWorks 0.33.4 Incremental Patch
+# CastorWorks 0.33.5 Patch
 
-This patch upgrades CastorWorks **0.33.3** to **0.33.4**.
+Direct-file incremental update for CastorWorks v0.33.4. This package contains replacement and new files only. It does not use a source patching script.
 
-It contains direct replacement and new files only. It does not include, require, or execute a source-patching script.
-
-## Highlights
-
-- AI draft controls on estimate and customer-conversation pages
-- Prompt history rollback
-- Per-user AI budgets
-- Provider and user usage reporting
-- AI Assistant health monitoring
-- Human-review confirmation before AI content is applied
-
-See `UPGRADE_0.33.4.md` for deployment instructions.
+Apply the files over the application root, run `php scripts/migrate.php migrate`, execute the regression test, and restart Apache.

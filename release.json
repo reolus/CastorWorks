@@ -1,17 +1,10 @@
 {
   "product": "CastorWorks",
-  "version": "0.33.4",
-  "baseline": "v0.33.3",
-  "release_type": "incremental",
+  "version": "0.33.5",
+  "name": "AI Security and Policy Completion",
+  "baseline": "v0.33.4",
   "minimum_php": "8.2",
-  "migrations": ["database/migrate_phase33_4.sql"],
-  "features": [
-    "AI draft controls on estimate and conversation screens",
-    "Prompt version rollback",
-    "Per-user AI budgets",
-    "Provider and user usage reporting",
-    "AI Assistant system health monitoring",
-    "Direct replacement files only"
-  ],
-  "breaking_changes": []
+  "migrations": ["database/migrate_phase33_5.sql"],
+  "breaking_changes": [],
+  "notes": "Completes the initial AI program with configurable redaction, retention, role budgets, provider testing, failure logging, exports, and audit reporting."
 }
