@@ -1,0 +1,43 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies
+/vendor/
+
+# Runtime and uploaded data
+/storage/*
+!/storage/.gitkeep
+!/storage/logs/.gitkeep
+
+# Backups
+*.sql
+*.sql.gz
+*.tar.gz
+*.zip
+
+# Logs
+*.log
+/var/
+logs/
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+
+# Test and cache output
+.phpunit.result.cache
+coverage/
+.cache/
+
+# Local deployment files
+composer.phar
