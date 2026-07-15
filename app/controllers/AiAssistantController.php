@@ -10,6 +10,8 @@ use App\Core\View;
 use App\Services\AiContextService;
 use App\Services\AiCostService;
 use App\Services\AiGovernanceService;
+use App\Services\AiDraftApplicationService;
+use App\Services\AiPromptHistoryService;
 use App\Services\AiOperationalService;
 use App\Services\AiProviderService;
 use App\Services\AuditService;
@@ -171,32 +173,37 @@ final class AiAssistantController
             redirect('/portal/ai');
         }
         if ((int) $draft['requires_approval'] === 1 && $draft['status'] !== 'approved') {
-            flash('danger', 'This draft must be approved before it can be used.');
+            flash('danger', 'This draft must be approved before it can be applied.');
             redirect('/portal/ai');
         }
         if (in_array($draft['status'], ['rejected', 'used'], true)) {
             flash('danger', 'This draft cannot be used in its current state.');
             redirect('/portal/ai');
         }
-        $targetType = mb_substr(trim((string) ($_POST['target_type'] ?? $draft['draft_type'])), 0, 80);
-        $targetId = ($_POST['target_id'] ?? '') !== '' ? (int) $_POST['target_id'] : null;
+        $targetType = (string) ($_POST['target_type'] ?? '');
+        $targetId = (int) ($_POST['target_id'] ?? 0);
+        $humanReviewed = isset($_POST['human_reviewed']);
         $notes = mb_substr(trim((string) ($_POST['notes'] ?? '')), 0, 1000);
         $pdo->beginTransaction();
         try {
-            $pdo->prepare("UPDATE ai_generated_drafts SET status='used',used_by=?,used_at=NOW(),use_target_type=?,use_target_id=? WHERE id=?")->execute([Auth::id(), $targetType, $targetId, $id]);
-            $pdo->prepare('INSERT INTO ai_draft_use_events(draft_id,target_type,target_id,notes,used_by,used_at) VALUES(?,?,?,?,?,NOW())')->execute([$id, $targetType, $targetId, $notes, Auth::id()]);
+            $applied = (new AiDraftApplicationService($pdo))->apply($draft, $targetType, $targetId, $humanReviewed);
+            $pdo->prepare("UPDATE ai_generated_drafts SET status='used',used_by=?,used_at=NOW(),use_target_type=?,use_target_id=?,human_reviewed_by=?,human_reviewed_at=NOW() WHERE id=?")
+                ->execute([Auth::id(), $targetType, $targetId, Auth::id(), $id]);
+            $pdo->prepare('INSERT INTO ai_draft_use_events(draft_id,target_type,target_id,notes,used_by,used_at) VALUES(?,?,?,?,?,NOW())')
+                ->execute([$id, $targetType, $targetId, $notes, Auth::id()]);
+            $pdo->prepare('INSERT INTO ai_draft_application_events(draft_id,target_type,target_id,before_content,after_content,human_reviewed_by,applied_by,applied_at) VALUES(?,?,?,?,?,?,?,NOW())')
+                ->execute([$id, $targetType, $targetId, $applied['before_content'], $applied['after_content'], Auth::id(), Auth::id()]);
             $pdo->commit();
-            AuditService::log('ai.draft_used', 'ai_generated_draft', $id);
-            $_SESSION['ai_answer'] = (string) $draft['content'];
-            $_SESSION['ai_prompt'] = 'Approved draft #' . $id;
-            flash('success', 'Draft marked as used. Its content is shown for final copy or application.');
+            AuditService::log('ai.draft_applied', $targetType, $targetId, ['draft_id' => $id]);
+            flash('success', 'Approved AI draft applied after human review.');
+            redirect($targetType === 'estimate' ? '/portal/estimates/' . $targetId : '/portal/conversations/' . $targetId);
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            flash('danger', 'Unable to use AI draft: ' . $e->getMessage());
+            flash('danger', 'Unable to apply AI draft: ' . $e->getMessage());
+            redirect('/portal/ai');
         }
-        redirect('/portal/ai');
     }
 
     public function updateSettings(): void
@@ -241,9 +248,17 @@ final class AiAssistantController
             flash('danger', 'Prompt name and template are required.');
             redirect('/portal/ai');
         }
-        Database::connection()->prepare("INSERT INTO ai_saved_prompts(name,prompt_template,version,created_by,created_at,updated_at) VALUES(?,?,1,?,NOW(),NOW()) ON DUPLICATE KEY UPDATE prompt_template=VALUES(prompt_template),version=version+1,updated_at=NOW()")
-            ->execute([$name, $prompt, Auth::id()]);
-        flash('success', 'Prompt saved.');
+        $pdo = Database::connection();
+        $stmt = $pdo->prepare('SELECT id,prompt_template,version FROM ai_saved_prompts WHERE name=?');
+        $stmt->execute([$name]);
+        $existing = $stmt->fetch();
+        if (is_array($existing)) {
+            (new AiPromptHistoryService($pdo))->saveVersion((int) $existing['id'], (string) $existing['prompt_template'], (int) $existing['version']);
+            $pdo->prepare('UPDATE ai_saved_prompts SET prompt_template=?,version=version+1,updated_at=NOW() WHERE id=?')->execute([$prompt, (int) $existing['id']]);
+        } else {
+            $pdo->prepare('INSERT INTO ai_saved_prompts(name,prompt_template,version,created_by,created_at,updated_at) VALUES(?,?,1,?,NOW(),NOW())')->execute([$name, $prompt, Auth::id()]);
+        }
+        flash('success', 'Prompt saved with version history.');
         redirect('/portal/ai');
     }
 

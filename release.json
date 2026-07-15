@@ -1,10 +1,10 @@
 {
   "product": "CastorWorks",
-  "version": "0.33.2",
-  "baseline": "v0.33.1",
-  "release_name": "AI Governance and Draft Workflow",
-  "minimum_php": "8.2",
-  "migrations": ["database/migrate_phase33_2.sql"],
-  "source_patcher": "scripts/apply-release-0.33.2.php",
-  "breaking_changes": false
+  "version": "0.33.3",
+  "baseline": "v0.33.2",
+  "type": "incremental",
+  "requires_php": ">=8.2",
+  "migrations": ["database/migrate_phase33_3.sql"],
+  "breaking_changes": [],
+  "summary": "AI draft application, human-review certification, prompt history, and per-user budget foundations."
 }

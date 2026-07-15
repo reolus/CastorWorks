@@ -1,5 +1,5 @@
-# CastorWorks 0.33.2 Patch
+# CastorWorks 0.33.3 Incremental Patch
 
-Incremental upgrade from the public `v0.33.1` baseline.
+Baseline: `v0.33.2`
 
-This release adds AI governance, approval-to-use workflows, role enforcement, estimated provider cost reporting, and draft-use auditing. AI-generated customer-facing content remains reviewable and is never sent automatically.
+This package contains direct replacement and new files only. Copy the package contents over the CastorWorks application root, run the migration, execute the regression test, and restart Apache.
