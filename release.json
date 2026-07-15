@@ -1,10 +1,17 @@
 {
   "product": "CastorWorks",
-  "version": "0.33.3",
-  "baseline": "v0.33.2",
-  "type": "incremental",
-  "requires_php": ">=8.2",
-  "migrations": ["database/migrate_phase33_3.sql"],
-  "breaking_changes": [],
-  "summary": "AI draft application, human-review certification, prompt history, and per-user budget foundations."
+  "version": "0.33.4",
+  "baseline": "v0.33.3",
+  "release_type": "incremental",
+  "minimum_php": "8.2",
+  "migrations": ["database/migrate_phase33_4.sql"],
+  "features": [
+    "AI draft controls on estimate and conversation screens",
+    "Prompt version rollback",
+    "Per-user AI budgets",
+    "Provider and user usage reporting",
+    "AI Assistant system health monitoring",
+    "Direct replacement files only"
+  ],
+  "breaking_changes": []
 }

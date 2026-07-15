@@ -12,6 +12,7 @@ use App\Services\AiCostService;
 use App\Services\AiGovernanceService;
 use App\Services\AiDraftApplicationService;
 use App\Services\AiPromptHistoryService;
+use App\Services\AiUsageReportService;
 use App\Services\AiOperationalService;
 use App\Services\AiProviderService;
 use App\Services\AuditService;
@@ -24,11 +25,17 @@ final class AiAssistantController
         Auth::requireLogin();
         $pdo = Database::connection();
         $provider = new AiProviderService($pdo);
-        $usage = $prompts = $drafts = [];
+        $usage = $prompts = $drafts = $providerUsage = $userUsage = $promptHistory = [];
+        $usageSummary = [];
         try {
             $usage = $pdo->query("SELECT l.*,u.name user_name FROM ai_usage_logs l LEFT JOIN users u ON u.id=l.user_id ORDER BY l.created_at DESC LIMIT 25")->fetchAll();
             $prompts = $pdo->query("SELECT * FROM ai_saved_prompts WHERE active=1 ORDER BY name")->fetchAll();
             $drafts = $pdo->query("SELECT d.*,u.name created_by_name,a.name approved_by_name,r.name rejected_by_name FROM ai_generated_drafts d LEFT JOIN users u ON u.id=d.created_by LEFT JOIN users a ON a.id=d.approved_by LEFT JOIN users r ON r.id=d.rejected_by ORDER BY d.created_at DESC LIMIT 30")->fetchAll();
+            $reports = new AiUsageReportService($pdo);
+            $usageSummary = $reports->summary();
+            $providerUsage = $reports->byProvider();
+            $userUsage = $reports->byUser();
+            $promptHistory = $reports->promptHistory();
         } catch (Throwable) {
         }
         View::render('portal/ai/index', [
@@ -38,6 +45,10 @@ final class AiAssistantController
             'usage' => $usage,
             'prompts' => $prompts,
             'drafts' => $drafts,
+            'usageSummary' => $usageSummary,
+            'providerUsage' => $providerUsage,
+            'userUsage' => $userUsage,
+            'promptHistory' => $promptHistory,
             'answer' => $_SESSION['ai_answer'] ?? null,
             'lastPrompt' => $_SESSION['ai_prompt'] ?? '',
         ], 'portal');
@@ -117,6 +128,8 @@ final class AiAssistantController
         $record = [
             'reference' => trim((string) ($_POST['reference'] ?? '')),
             'details' => trim((string) ($_POST['details'] ?? '')),
+            'target_type' => trim((string) ($_POST['target_type'] ?? '')),
+            'target_id' => max(0, (int) ($_POST['target_id'] ?? 0)),
         ];
         $pdo = Database::connection();
         try {
@@ -126,8 +139,8 @@ final class AiAssistantController
             $result = (new AiOperationalService($pdo, new AiProviderService($pdo)))->draft($type, $record, trim((string) ($_POST['instruction'] ?? '')));
             $requiresApproval = $governance->requiresApproval($type) ? 1 : 0;
             $status = $requiresApproval ? 'draft' : 'approved';
-            $stmt = $pdo->prepare("INSERT INTO ai_generated_drafts(draft_type,reference_key,content,status,requires_approval,created_by,approved_by,approved_at,created_at) VALUES(?,?,?,?,?,?,IF(?=0,?,NULL),IF(?=0,NOW(),NULL),NOW())");
-            $stmt->execute([$type, $record['reference'], $result['content'], $status, $requiresApproval, Auth::id(), $requiresApproval, Auth::id(), $requiresApproval]);
+            $stmt = $pdo->prepare("INSERT INTO ai_generated_drafts(draft_type,reference_key,content,status,requires_approval,created_by,approved_by,approved_at,source_target_type,source_target_id,created_at) VALUES(?,?,?,?,?,?,IF(?=0,?,NULL),IF(?=0,NOW(),NULL),?,?,NOW())");
+            $stmt->execute([$type, $record['reference'], $result['content'], $status, $requiresApproval, Auth::id(), $requiresApproval, Auth::id(), $requiresApproval, $record['target_type'] !== '' ? $record['target_type'] : null, $record['target_id'] > 0 ? $record['target_id'] : null]);
             $this->storeUsage($result, $type, $record['reference']);
             $_SESSION['ai_answer'] = $result['content'];
             $_SESSION['ai_prompt'] = 'Draft: ' . $type;
@@ -136,7 +149,8 @@ final class AiAssistantController
         } catch (Throwable $e) {
             flash('danger', 'AI draft failed: ' . $e->getMessage());
         }
-        redirect('/portal/ai');
+        $returnTo = (string) ($_POST['return_to'] ?? '/portal/ai');
+        redirect(str_starts_with($returnTo, '/portal/') ? $returnTo : '/portal/ai');
     }
 
     public function approveDraft(int $id): void
@@ -259,6 +273,39 @@ final class AiAssistantController
             $pdo->prepare('INSERT INTO ai_saved_prompts(name,prompt_template,version,created_by,created_at,updated_at) VALUES(?,?,1,?,NOW(),NOW())')->execute([$name, $prompt, Auth::id()]);
         }
         flash('success', 'Prompt saved with version history.');
+        redirect('/portal/ai');
+    }
+
+    public function rollbackPrompt(int $id): void
+    {
+        Auth::requireRole('owner', 'administrator', 'office');
+        verify_csrf();
+        $version = max(1, (int) ($_POST['version'] ?? 0));
+        try {
+            (new AiPromptHistoryService(Database::connection()))->rollback($id, $version);
+            AuditService::log('ai.prompt_rollback', 'ai_saved_prompt', $id, ['version' => $version]);
+            flash('success', 'Prompt restored from version ' . $version . '.');
+        } catch (Throwable $e) {
+            flash('danger', 'Prompt rollback failed: ' . $e->getMessage());
+        }
+        redirect('/portal/ai');
+    }
+
+    public function updateBudget(int $id): void
+    {
+        Auth::requireRole('owner', 'administrator');
+        verify_csrf();
+        $pdo = Database::connection();
+        $pdo->prepare("INSERT INTO ai_user_budgets(user_id,daily_request_limit,monthly_request_limit,monthly_cost_limit_usd,updated_by,updated_at) VALUES(?,?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE daily_request_limit=VALUES(daily_request_limit),monthly_request_limit=VALUES(monthly_request_limit),monthly_cost_limit_usd=VALUES(monthly_cost_limit_usd),updated_by=VALUES(updated_by),updated_at=NOW()")
+            ->execute([
+                $id,
+                max(0, (int) ($_POST['daily_request_limit'] ?? 0)),
+                max(0, (int) ($_POST['monthly_request_limit'] ?? 0)),
+                max(0, (float) ($_POST['monthly_cost_limit_usd'] ?? 0)),
+                Auth::id(),
+            ]);
+        AuditService::log('ai.user_budget_updated', 'user', $id);
+        flash('success', 'AI budget updated.');
         redirect('/portal/ai');
     }
 

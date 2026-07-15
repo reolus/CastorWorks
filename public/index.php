@@ -50,57 +50,16 @@ $r->get('/portal/quickbooks/mappings',[QuickBooksMappingController::class,'index
 $r->get('/portal/job-costs',[JobCostController::class,'index']);
 $r->get('/portal/system/upgrade',[UpgradeController::class,'index']);$r->post('/portal/system/upgrade',[UpgradeController::class,'run']);
 $r->get('/api/v1/me',[ApiController::class,'me']);$r->get('/api/v1/jobs/today',[ApiController::class,'jobsToday']);$r->get('/api/v1/customers',[ApiController::class,'customers']);$r->get('/api/v1/health',[ApiController::class,'health']);$r->post('/api/v1/customers',[ApiController::class,'createCustomer']);$r->post('/api/v1/jobs/{id}/status',[ApiController::class,'updateJobStatus']);$r->post('/api/v1/jobs/{id}/notes',[ApiController::class,'addJobNote']);
-$r->get(
-    '/portal/ai',
-    [\App\Controllers\AiAssistantController::class, 'index']
-);
-
-$r->post(
-    '/portal/ai/ask',
-    [\App\Controllers\AiAssistantController::class, 'ask']
-);
-
-$r->post(
-    '/portal/ai/daily-brief',
-    [\App\Controllers\AiAssistantController::class, 'dailyBrief']
-);
-
-$r->get(
-    '/portal/ai/search',
-    [\App\Controllers\AiAssistantController::class, 'search']
-);
-
-$r->post(
-    '/portal/ai/drafts',
-    [\App\Controllers\AiAssistantController::class, 'createDraft']
-);
-
-$r->post(
-    '/portal/ai/drafts/{id}/approve',
-    [\App\Controllers\AiAssistantController::class, 'approveDraft']
-);
-
-$r->post(
-    '/portal/ai/drafts/{id}/reject',
-    [\App\Controllers\AiAssistantController::class, 'rejectDraft']
-);
-
-$r->post(
-    '/portal/ai/drafts/{id}/use',
-    [\App\Controllers\AiAssistantController::class, 'useDraft']
-);
-
-$r->post(
-    '/portal/ai/settings',
-    [\App\Controllers\AiAssistantController::class, 'updateSettings']
-);
-
-$r->post(
-    '/portal/ai/prompts',
-    [\App\Controllers\AiAssistantController::class, 'savePrompt']
-);
-
-$r->dispatch(
-    $_SERVER['REQUEST_METHOD'],
-    $_SERVER['REQUEST_URI']
-);
+$r->get('/portal/ai',[\App\Controllers\AiAssistantController::class,'index']);
+$r->post('/portal/ai/ask',[\App\Controllers\AiAssistantController::class,'ask']);
+$r->post('/portal/ai/daily-brief',[\App\Controllers\AiAssistantController::class,'dailyBrief']);
+$r->get('/portal/ai/search',[\App\Controllers\AiAssistantController::class,'search']);
+$r->post('/portal/ai/drafts',[\App\Controllers\AiAssistantController::class,'createDraft']);
+$r->post('/portal/ai/drafts/{id}/approve',[\App\Controllers\AiAssistantController::class,'approveDraft']);
+$r->post('/portal/ai/drafts/{id}/reject',[\App\Controllers\AiAssistantController::class,'rejectDraft']);
+$r->post('/portal/ai/drafts/{id}/use',[\App\Controllers\AiAssistantController::class,'useDraft']);
+$r->post('/portal/ai/settings',[\App\Controllers\AiAssistantController::class,'updateSettings']);
+$r->post('/portal/ai/prompts',[\App\Controllers\AiAssistantController::class,'savePrompt']);
+$r->post('/portal/ai/prompts/{id}/rollback',[\App\Controllers\AiAssistantController::class,'rollbackPrompt']);
+$r->post('/portal/ai/budgets/{id}',[\App\Controllers\AiAssistantController::class,'updateBudget']);
+$r->dispatch($_SERVER['REQUEST_METHOD'],$_SERVER['REQUEST_URI']);

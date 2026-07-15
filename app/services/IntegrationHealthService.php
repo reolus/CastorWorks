@@ -3,7 +3,7 @@ namespace App\Services;
 use App\Core\Database;use App\Core\Env;use Throwable;
 final class IntegrationHealthService
 {
-    public function all(bool $probe=false): array{return ['graph'=>$this->graph($probe),'sharepoint'=>$this->sharePoint($probe),'teams'=>$this->teams(),'geocoding'=>$this->geocoding(),'route_engine'=>$this->routeEngine(),'gps_tracking'=>$this->gpsTracking(),'eta_progress'=>$this->etaProgress(),'operational_analytics'=>$this->operationalAnalytics(),'communications'=>$this->communications(),'aws'=>$this->providerFamily('aws'),'azure'=>$this->providerFamily('azure'),'stripe'=>$this->stripe(),'twilio'=>$this->twilio()];}
+    public function all(bool $probe=false): array{return ['graph'=>$this->graph($probe),'sharepoint'=>$this->sharePoint($probe),'teams'=>$this->teams(),'geocoding'=>$this->geocoding(),'route_engine'=>$this->routeEngine(),'gps_tracking'=>$this->gpsTracking(),'eta_progress'=>$this->etaProgress(),'operational_analytics'=>$this->operationalAnalytics(),'ai_assistant'=>$this->aiAssistant(),'communications'=>$this->communications(),'aws'=>$this->providerFamily('aws'),'azure'=>$this->providerFamily('azure'),'stripe'=>$this->stripe(),'twilio'=>$this->twilio()];}
     public function graph(bool $probe=false): array
     {
         $mailbox=Env::string('M365_SHARED_MAILBOX');$configured=Env::string('M365_TENANT_ID')!==''&&Env::string('M365_CLIENT_ID')!==''&&Env::string('M365_CLIENT_SECRET')!==''&&$mailbox!=='';
@@ -70,6 +70,41 @@ final class IntegrationHealthService
             $threshold=max(300,((int)$settings['minimum_recalculation_minutes']+5)*60);
             return ['name'=>'ETA & Route Progress','configured'=>true,'healthy'=>$last['status']==='ok'&&$age<=$threshold,'optional'=>true,'detail'=>(int)$last['jobs_updated'].' job(s) updated; '.(int)$last['notifications_sent'].' notice(s) sent.','latency_ms'=>null,'last_tested_at'=>$last['completed_at']];
         } catch(Throwable $e) { return ['name'=>'ETA & Route Progress','configured'=>false,'healthy'=>false,'optional'=>true,'detail'=>$e->getMessage(),'latency_ms'=>null,'last_tested_at'=>null]; }
+    }
+
+
+    private function aiAssistant(): array
+    {
+        try {
+            $pdo = Database::connection();
+            $settings = $pdo->query('SELECT * FROM ai_provider_settings WHERE id=1')->fetch();
+            if (!is_array($settings) || !(bool) ($settings['enabled'] ?? false) || ($settings['provider'] ?? 'disabled') === 'disabled') {
+                return ['name'=>'AI Assistant','configured'=>false,'healthy'=>null,'optional'=>true,'detail'=>'AI Assistant disabled.','latency_ms'=>null,'last_tested_at'=>null];
+            }
+
+            $health = (new AiProviderService($pdo))->healthCheck();
+            $last = $pdo->query("SELECT status,provider,model,latency_ms,created_at FROM ai_usage_logs ORDER BY created_at DESC,id DESC LIMIT 1")->fetch();
+            $month = $pdo->query("SELECT COUNT(*) requests,COALESCE(SUM(status<>'success'),0) failed,COALESCE(SUM(estimated_cost_usd),0) cost FROM ai_usage_logs WHERE created_at>=DATE_FORMAT(CURDATE(),'%Y-%m-01')")->fetch() ?: [];
+            $configured = ($health['status'] ?? '') !== 'disabled';
+            $healthy = match ($health['status'] ?? 'warning') {
+                'ok' => true,
+                'failed' => false,
+                default => null,
+            };
+            $detail = (string) ($health['detail'] ?? 'Unknown AI status.');
+            $detail .= ' ' . (int) ($month['requests'] ?? 0) . ' request(s) this month; ' . (int) ($month['failed'] ?? 0) . ' failed; $' . number_format((float) ($month['cost'] ?? 0), 4) . ' estimated cost.';
+            return [
+                'name'=>'AI Assistant',
+                'configured'=>$configured,
+                'healthy'=>$healthy,
+                'optional'=>true,
+                'detail'=>$detail,
+                'latency_ms'=>is_array($last) && $last['latency_ms'] !== null ? (int) $last['latency_ms'] : null,
+                'last_tested_at'=>is_array($last) ? $last['created_at'] : null,
+            ];
+        } catch (Throwable $e) {
+            return ['name'=>'AI Assistant','configured'=>false,'healthy'=>false,'optional'=>true,'detail'=>$e->getMessage(),'latency_ms'=>null,'last_tested_at'=>null];
+        }
     }
 
     private function communications():array

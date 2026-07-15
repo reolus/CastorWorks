@@ -7,6 +7,13 @@ $statusClass = match ($health['status'] ?? 'warning') { 'ok' => 'success', 'fail
   <span class="badge text-bg-<?=$statusClass?> p-2"><?=e($health['detail'] ?? 'Unknown')?></span>
 </div>
 
+<div class="row g-3 mb-4">
+  <div class="col-md-3"><div class="card card-body"><small class="text-muted">Requests this month</small><strong class="fs-4"><?=number_format((int)($usageSummary['requests']??0))?></strong></div></div>
+  <div class="col-md-3"><div class="card card-body"><small class="text-muted">Successful</small><strong class="fs-4"><?=number_format((int)($usageSummary['successful']??0))?></strong></div></div>
+  <div class="col-md-3"><div class="card card-body"><small class="text-muted">Estimated cost</small><strong class="fs-4">$<?=number_format((float)($usageSummary['estimated_cost']??0),4)?></strong></div></div>
+  <div class="col-md-3"><div class="card card-body"><small class="text-muted">Average latency</small><strong class="fs-4"><?=number_format((float)($usageSummary['average_latency_ms']??0))?> ms</strong></div></div>
+</div>
+
 <div class="row g-4">
   <div class="col-xl-8">
     <div class="card card-body mb-4">
@@ -43,7 +50,7 @@ $statusClass = match ($health['status'] ?? 'warning') { 'ok' => 'success', 'fail
       <?php foreach($drafts as $draft):?><tr><td><?=e($draft['created_at'])?><br><small class="text-muted"><?=e($draft['created_by_name']??'System')?></small></td><td><?=e($draft['draft_type'])?><br><small><?=e($draft['reference_key'])?></small></td><td><span class="badge text-bg-<?=match($draft['status']){'approved'=>'success','rejected'=>'danger','used'=>'primary',default=>'warning'}?>"><?=e($draft['status'])?></span></td><td style="min-width:320px;white-space:pre-wrap"><?=e(mb_strimwidth((string)$draft['content'],0,600,'…'))?></td><td>
       <?php if($draft['status']==='draft' && \App\Core\Auth::can('owner','administrator','office')):?><form class="mb-2" method="post" action="/portal/ai/drafts/<?=$draft['id']?>/approve"><?=csrf_field()?><button class="btn btn-sm btn-success">Approve</button></form><?php endif?>
       <?php if(in_array($draft['status'],['draft','approved'],true) && \App\Core\Auth::can('owner','administrator','office')):?><form class="mb-2" method="post" action="/portal/ai/drafts/<?=$draft['id']?>/reject"><?=csrf_field()?><input class="form-control form-control-sm mb-1" name="reason" placeholder="Reason"><button class="btn btn-sm btn-outline-danger">Reject</button></form><?php endif?>
-      <?php if($draft['status']==='approved' || ($draft['status']==='draft' && !(int)$draft['requires_approval'])):?><form method="post" action="/portal/ai/drafts/<?=$draft['id']?>/use"><?=csrf_field()?><input class="form-control form-control-sm mb-1" name="target_type" value="<?=e($draft['draft_type'])?>"><input class="form-control form-control-sm mb-1" type="number" name="target_id" placeholder="Optional record ID"><button class="btn btn-sm btn-primary">Mark used / copy</button></form><?php endif?>
+      <?php if($draft['status']==='approved' || ($draft['status']==='draft' && !(int)$draft['requires_approval'])):?><form method="post" action="/portal/ai/drafts/<?=$draft['id']?>/use"><?=csrf_field()?><input class="form-control form-control-sm mb-1" name="target_type" value="<?=e($draft['source_target_type']??$draft['draft_type'])?>"><input class="form-control form-control-sm mb-1" type="number" name="target_id" value="<?=e($draft['source_target_id']??'')?>" placeholder="Record ID" required><div class="form-check small mb-1"><input class="form-check-input" type="checkbox" name="human_reviewed" value="1" id="reviewed<?=$draft['id']?>" required><label class="form-check-label" for="reviewed<?=$draft['id']?>">I reviewed this content</label></div><button class="btn btn-sm btn-primary">Apply approved draft</button></form><?php endif?>
       </td></tr><?php endforeach?>
       <?php if(!$drafts):?><tr><td colspan="5" class="text-muted">No AI drafts have been created.</td></tr><?php endif?>
       </tbody></table></div>
@@ -83,11 +90,27 @@ $statusClass = match ($health['status'] ?? 'warning') { 'ok' => 'success', 'fail
     </div>
     <?php endif?>
 
+    <?php if($canConfigure):?>
+    <div class="card card-body mb-4">
+      <h2 class="h5">Provider usage this month</h2>
+      <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Provider</th><th>Requests</th><th>Failures</th><th>Cost</th></tr></thead><tbody>
+      <?php foreach($providerUsage as $row):?><tr><td><?=e($row['provider'])?><br><small class="text-muted"><?=e($row['model'])?></small></td><td><?=e($row['requests'])?></td><td><?=e($row['failed'])?></td><td>$<?=number_format((float)$row['estimated_cost'],4)?></td></tr><?php endforeach?>
+      <?php if(!$providerUsage):?><tr><td colspan="4" class="text-muted">No provider usage this month.</td></tr><?php endif?>
+      </tbody></table></div>
+    </div>
+
+    <div class="card card-body mb-4">
+      <h2 class="h5">User AI budgets</h2>
+      <?php foreach($userUsage as $row):?><form method="post" action="/portal/ai/budgets/<?=$row['user_id']?>" class="border rounded p-2 mb-2"><?=csrf_field()?><div class="fw-semibold"><?=e($row['name'])?> <small class="text-muted"><?=e($row['role'])?> · <?=e($row['requests'])?> request(s) · $<?=number_format((float)$row['estimated_cost'],4)?></small></div><div class="row g-1 mt-1"><div class="col-4"><input class="form-control form-control-sm" type="number" min="0" name="daily_request_limit" value="<?=e($row['daily_request_limit']??0)?>" title="Daily request limit"></div><div class="col-4"><input class="form-control form-control-sm" type="number" min="0" name="monthly_request_limit" value="<?=e($row['monthly_request_limit']??0)?>" title="Monthly request limit"></div><div class="col-4"><input class="form-control form-control-sm" type="number" min="0" step="0.01" name="monthly_cost_limit_usd" value="<?=e($row['monthly_cost_limit_usd']??0)?>" title="Monthly cost limit"></div></div><button class="btn btn-sm btn-outline-primary mt-2">Save budget</button></form><?php endforeach?>
+    </div>
+    <?php endif?>
+
     <div class="card card-body">
       <h2 class="h5">Saved prompts</h2>
       <?php foreach($prompts as $prompt):?><button type="button" class="btn btn-sm btn-outline-secondary text-start mb-2 ai-prompt-button" data-prompt="<?=e($prompt['prompt_template'])?>"><?=e($prompt['name'])?></button><?php endforeach?>
       <?php if(!$prompts):?><p class="text-muted">No saved prompts.</p><?php endif?>
       <?php if(\App\Core\Auth::can('owner','administrator','office')):?><hr><form method="post" action="/portal/ai/prompts"><?=csrf_field()?><input class="form-control mb-2" name="name" placeholder="Prompt name" required><textarea class="form-control mb-2" name="prompt_template" rows="3" placeholder="Prompt text" required></textarea><button class="btn btn-sm btn-outline-primary">Save prompt</button></form><?php endif?>
+      <?php if($promptHistory):?><hr><h3 class="h6">Recent prompt versions</h3><?php foreach(array_slice($promptHistory,0,12) as $version):?><div class="border rounded p-2 mb-2"><div class="small fw-semibold"><?=e($version['current_name'])?> v<?=e($version['version'])?></div><div class="small text-muted mb-1"><?=e($version['created_at'])?> · <?=e($version['created_by_name']??'System')?></div><form method="post" action="/portal/ai/prompts/<?=$version['prompt_id']?>/rollback"><?=csrf_field()?><input type="hidden" name="version" value="<?=$version['version']?>"><button class="btn btn-sm btn-outline-secondary">Restore this version</button></form></div><?php endforeach?><?php endif?>
     </div>
   </div>
 </div>
