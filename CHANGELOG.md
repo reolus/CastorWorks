@@ -1,10 +1,10 @@
 # CastorWorks Changelog
 
-## 0.33.1
+## 0.33.2 - AI Governance and Draft Workflow
 
-- Added AI daily operations briefs and operational record lookup.
-- Added reviewable estimate, customer-response, route, and staffing drafts.
-- Added approval controls for customer-facing AI drafts.
-- Added sensitive-data redaction and daily/monthly request limits.
-- Added prompt version increments.
-- Included the missing 0.33.0 AI foundation files for compatibility with the public tag.
+- Added role-based AI access enforcement.
+- Added estimate, customer-reply, route, and staffing draft governance.
+- Added approve, reject, and mark-used workflows with audit events.
+- Added estimated provider cost reporting and monthly cost limits.
+- Added per-draft-type approval policy controls.
+- Added an immutable draft-use event trail.

@@ -8,9 +8,11 @@ use App\Core\Auth;
 use App\Core\Database;
 use App\Core\View;
 use App\Services\AiContextService;
+use App\Services\AiCostService;
+use App\Services\AiGovernanceService;
 use App\Services\AiOperationalService;
 use App\Services\AiProviderService;
-use App\Services\AiRedactionService;
+use App\Services\AuditService;
 use Throwable;
 
 final class AiAssistantController
@@ -19,107 +21,238 @@ final class AiAssistantController
     {
         Auth::requireLogin();
         $pdo = Database::connection();
-        $service = new AiProviderService($pdo);
+        $provider = new AiProviderService($pdo);
         $usage = $prompts = $drafts = [];
         try {
             $usage = $pdo->query("SELECT l.*,u.name user_name FROM ai_usage_logs l LEFT JOIN users u ON u.id=l.user_id ORDER BY l.created_at DESC LIMIT 25")->fetchAll();
             $prompts = $pdo->query("SELECT * FROM ai_saved_prompts WHERE active=1 ORDER BY name")->fetchAll();
-            $drafts = $pdo->query("SELECT d.*,u.name created_by_name FROM ai_generated_drafts d LEFT JOIN users u ON u.id=d.created_by ORDER BY d.created_at DESC LIMIT 20")->fetchAll();
+            $drafts = $pdo->query("SELECT d.*,u.name created_by_name,a.name approved_by_name,r.name rejected_by_name FROM ai_generated_drafts d LEFT JOIN users u ON u.id=d.created_by LEFT JOIN users a ON a.id=d.approved_by LEFT JOIN users r ON r.id=d.rejected_by ORDER BY d.created_at DESC LIMIT 30")->fetchAll();
         } catch (Throwable) {
         }
         View::render('portal/ai/index', [
-            'title' => 'AI Assistant', 'settings' => $service->settings(), 'health' => $service->healthCheck(),
-            'usage' => $usage, 'prompts' => $prompts, 'drafts' => $drafts,
-            'answer' => $_SESSION['ai_answer'] ?? null, 'lastPrompt' => $_SESSION['ai_prompt'] ?? '',
+            'title' => 'AI Assistant',
+            'settings' => $provider->settings(),
+            'health' => $provider->healthCheck(),
+            'usage' => $usage,
+            'prompts' => $prompts,
+            'drafts' => $drafts,
+            'answer' => $_SESSION['ai_answer'] ?? null,
+            'lastPrompt' => $_SESSION['ai_prompt'] ?? '',
         ], 'portal');
         unset($_SESSION['ai_answer'], $_SESSION['ai_prompt']);
     }
 
     public function ask(): void
     {
-        Auth::requireLogin(); verify_csrf();
+        Auth::requireLogin();
+        verify_csrf();
         $prompt = trim((string) ($_POST['prompt'] ?? ''));
-        if ($prompt === '' || mb_strlen($prompt) > 8000) { flash('danger','Enter a prompt between 1 and 8,000 characters.'); redirect('/portal/ai'); }
-        $pdo = Database::connection(); $service = new AiProviderService($pdo);
-        $context = isset($_POST['include_context']) ? (new AiContextService($pdo))->operationalSummary() : [];
-        $this->executeAndLog($service, $prompt, 'operations_assistant', $context);
+        if ($prompt === '' || mb_strlen($prompt) > 8000) {
+            flash('danger', 'Enter a prompt between 1 and 8,000 characters.');
+            redirect('/portal/ai');
+        }
+        $pdo = Database::connection();
+        try {
+            $governance = new AiGovernanceService($pdo);
+            $governance->assertUserAllowed();
+            $governance->assertMonthlyBudgetAvailable();
+            $provider = new AiProviderService($pdo);
+            $context = isset($_POST['include_context']) ? (new AiContextService($pdo))->operationalSummary() : [];
+            $result = $provider->ask($prompt, 'operations_assistant', $context);
+            $this->storeUsage($result, 'operations_assistant', $prompt);
+            $_SESSION['ai_answer'] = $result['content'];
+            $_SESSION['ai_prompt'] = $prompt;
+        } catch (Throwable $e) {
+            flash('danger', 'AI request failed: ' . $e->getMessage());
+        }
         redirect('/portal/ai');
     }
 
     public function dailyBrief(): void
     {
-        Auth::requireRole('owner','administrator','office'); verify_csrf();
-        $pdo = Database::connection(); $provider = new AiProviderService($pdo);
+        Auth::requireRole('owner', 'administrator', 'office');
+        verify_csrf();
+        $pdo = Database::connection();
         try {
-            $result = (new AiOperationalService($pdo, $provider))->generateDailyBrief();
+            $governance = new AiGovernanceService($pdo);
+            $governance->assertUserAllowed();
+            $governance->assertMonthlyBudgetAvailable();
+            $result = (new AiOperationalService($pdo, new AiProviderService($pdo)))->generateDailyBrief();
             $this->storeUsage($result, 'daily_operations_brief', 'daily brief');
-            $_SESSION['ai_answer'] = $result['content']; $_SESSION['ai_prompt'] = 'Daily operations brief';
-        } catch (Throwable $e) { flash('danger','AI request failed: '.$e->getMessage()); }
+            $_SESSION['ai_answer'] = $result['content'];
+            $_SESSION['ai_prompt'] = 'Daily operations brief';
+        } catch (Throwable $e) {
+            flash('danger', 'AI request failed: ' . $e->getMessage());
+        }
         redirect('/portal/ai');
     }
 
     public function search(): void
     {
         Auth::requireLogin();
-        $query = trim((string) ($_GET['q'] ?? ''));
-        $service = new AiOperationalService(Database::connection(), new AiProviderService(Database::connection()));
+        $pdo = Database::connection();
         header('Content-Type: application/json');
-        echo json_encode(['query'=>$query,'results'=>$service->operationalSearch($query)], JSON_UNESCAPED_SLASHES);
+        try {
+            (new AiGovernanceService($pdo))->assertUserAllowed();
+            $query = trim((string) ($_GET['q'] ?? ''));
+            $service = new AiOperationalService($pdo, new AiProviderService($pdo));
+            echo json_encode(['query' => $query, 'results' => $service->operationalSearch($query)], JSON_UNESCAPED_SLASHES);
+        } catch (Throwable $e) {
+            http_response_code(403);
+            echo json_encode(['error' => $e->getMessage()]);
+        }
     }
 
     public function createDraft(): void
     {
-        Auth::requireRole('owner','administrator','office','estimator'); verify_csrf();
+        Auth::requireRole('owner', 'administrator', 'office', 'estimator');
+        verify_csrf();
         $type = (string) ($_POST['draft_type'] ?? '');
-        $record = ['reference' => trim((string) ($_POST['reference'] ?? '')), 'details' => trim((string) ($_POST['details'] ?? ''))];
-        $pdo = Database::connection(); $provider = new AiProviderService($pdo);
+        if (!in_array($type, ['estimate', 'customer_reply', 'route_recommendation', 'staffing_recommendation'], true)) {
+            flash('danger', 'Unsupported AI draft type.');
+            redirect('/portal/ai');
+        }
+        $record = [
+            'reference' => trim((string) ($_POST['reference'] ?? '')),
+            'details' => trim((string) ($_POST['details'] ?? '')),
+        ];
+        $pdo = Database::connection();
         try {
-            $result = (new AiOperationalService($pdo, $provider))->draft($type, $record, trim((string) ($_POST['instruction'] ?? '')));
-            $requiresApproval = in_array($type, ['estimate','customer_reply'], true) ? 1 : 0;
-            $stmt = $pdo->prepare("INSERT INTO ai_generated_drafts(draft_type,reference_key,content,status,requires_approval,created_by,created_at) VALUES(?,?,?,'draft',?,?,NOW())");
-            $stmt->execute([$type,$record['reference'],$result['content'],$requiresApproval,Auth::id()]);
+            $governance = new AiGovernanceService($pdo);
+            $governance->assertUserAllowed();
+            $governance->assertMonthlyBudgetAvailable();
+            $result = (new AiOperationalService($pdo, new AiProviderService($pdo)))->draft($type, $record, trim((string) ($_POST['instruction'] ?? '')));
+            $requiresApproval = $governance->requiresApproval($type) ? 1 : 0;
+            $status = $requiresApproval ? 'draft' : 'approved';
+            $stmt = $pdo->prepare("INSERT INTO ai_generated_drafts(draft_type,reference_key,content,status,requires_approval,created_by,approved_by,approved_at,created_at) VALUES(?,?,?,?,?,?,IF(?=0,?,NULL),IF(?=0,NOW(),NULL),NOW())");
+            $stmt->execute([$type, $record['reference'], $result['content'], $status, $requiresApproval, Auth::id(), $requiresApproval, Auth::id(), $requiresApproval]);
             $this->storeUsage($result, $type, $record['reference']);
-            $_SESSION['ai_answer'] = $result['content']; $_SESSION['ai_prompt'] = 'Draft: '.$type;
-            flash('success','AI draft created. Review it before use.');
-        } catch (Throwable $e) { flash('danger','AI draft failed: '.$e->getMessage()); }
+            $_SESSION['ai_answer'] = $result['content'];
+            $_SESSION['ai_prompt'] = 'Draft: ' . $type;
+            AuditService::log('ai.draft_created', 'ai_generated_draft', (int) $pdo->lastInsertId());
+            flash('success', $requiresApproval ? 'AI draft created and queued for approval.' : 'AI draft created and pre-approved by policy.');
+        } catch (Throwable $e) {
+            flash('danger', 'AI draft failed: ' . $e->getMessage());
+        }
         redirect('/portal/ai');
     }
 
     public function approveDraft(int $id): void
     {
-        Auth::requireRole('owner','administrator','office'); verify_csrf();
-        Database::connection()->prepare("UPDATE ai_generated_drafts SET status='approved',approved_by=?,approved_at=NOW() WHERE id=? AND status='draft'")->execute([Auth::id(),$id]);
-        flash('success','AI draft approved.'); redirect('/portal/ai');
+        Auth::requireRole('owner', 'administrator', 'office');
+        verify_csrf();
+        Database::connection()->prepare("UPDATE ai_generated_drafts SET status='approved',approved_by=?,approved_at=NOW(),rejected_by=NULL,rejected_at=NULL,rejection_reason=NULL WHERE id=? AND status='draft'")->execute([Auth::id(), $id]);
+        AuditService::log('ai.draft_approved', 'ai_generated_draft', $id);
+        flash('success', 'AI draft approved.');
+        redirect('/portal/ai');
+    }
+
+    public function rejectDraft(int $id): void
+    {
+        Auth::requireRole('owner', 'administrator', 'office');
+        verify_csrf();
+        $reason = mb_substr(trim((string) ($_POST['reason'] ?? '')), 0, 1000);
+        Database::connection()->prepare("UPDATE ai_generated_drafts SET status='rejected',rejected_by=?,rejected_at=NOW(),rejection_reason=? WHERE id=? AND status IN ('draft','approved')")->execute([Auth::id(), $reason, $id]);
+        AuditService::log('ai.draft_rejected', 'ai_generated_draft', $id);
+        flash('success', 'AI draft rejected.');
+        redirect('/portal/ai');
+    }
+
+    public function useDraft(int $id): void
+    {
+        Auth::requireRole('owner', 'administrator', 'office', 'estimator');
+        verify_csrf();
+        $pdo = Database::connection();
+        $stmt = $pdo->prepare('SELECT * FROM ai_generated_drafts WHERE id=?');
+        $stmt->execute([$id]);
+        $draft = $stmt->fetch();
+        if (!is_array($draft)) {
+            flash('danger', 'AI draft not found.');
+            redirect('/portal/ai');
+        }
+        if ((int) $draft['requires_approval'] === 1 && $draft['status'] !== 'approved') {
+            flash('danger', 'This draft must be approved before it can be used.');
+            redirect('/portal/ai');
+        }
+        if (in_array($draft['status'], ['rejected', 'used'], true)) {
+            flash('danger', 'This draft cannot be used in its current state.');
+            redirect('/portal/ai');
+        }
+        $targetType = mb_substr(trim((string) ($_POST['target_type'] ?? $draft['draft_type'])), 0, 80);
+        $targetId = ($_POST['target_id'] ?? '') !== '' ? (int) $_POST['target_id'] : null;
+        $notes = mb_substr(trim((string) ($_POST['notes'] ?? '')), 0, 1000);
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare("UPDATE ai_generated_drafts SET status='used',used_by=?,used_at=NOW(),use_target_type=?,use_target_id=? WHERE id=?")->execute([Auth::id(), $targetType, $targetId, $id]);
+            $pdo->prepare('INSERT INTO ai_draft_use_events(draft_id,target_type,target_id,notes,used_by,used_at) VALUES(?,?,?,?,?,NOW())')->execute([$id, $targetType, $targetId, $notes, Auth::id()]);
+            $pdo->commit();
+            AuditService::log('ai.draft_used', 'ai_generated_draft', $id);
+            $_SESSION['ai_answer'] = (string) $draft['content'];
+            $_SESSION['ai_prompt'] = 'Approved draft #' . $id;
+            flash('success', 'Draft marked as used. Its content is shown for final copy or application.');
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            flash('danger', 'Unable to use AI draft: ' . $e->getMessage());
+        }
+        redirect('/portal/ai');
     }
 
     public function updateSettings(): void
     {
-        Auth::requireRole('owner','administrator'); verify_csrf();
+        Auth::requireRole('owner', 'administrator');
+        verify_csrf();
         $provider = (string) ($_POST['provider'] ?? 'disabled');
-        if (!in_array($provider,['disabled','openai','azure_openai','ollama'],true)) $provider='disabled';
-        Database::connection()->prepare("UPDATE ai_provider_settings SET enabled=?,provider=?,model=?,endpoint=?,temperature=?,max_tokens=?,daily_request_limit=?,monthly_request_limit=?,allowed_roles=?,redact_sensitive_data=?,system_prompt=?,updated_by=?,updated_at=NOW() WHERE id=1")->execute([
-            isset($_POST['enabled'])?1:0,$provider,trim((string)($_POST['model']??'')),trim((string)($_POST['endpoint']??'')),max(0,min(2,(float)($_POST['temperature']??0.2))),max(64,min(8000,(int)($_POST['max_tokens']??800))),max(0,(int)($_POST['daily_request_limit']??0)),max(0,(int)($_POST['monthly_request_limit']??0)),trim((string)($_POST['allowed_roles']??'owner,administrator,office,estimator')),isset($_POST['redact_sensitive_data'])?1:0,trim((string)($_POST['system_prompt']??'')),Auth::id()
+        if (!in_array($provider, ['disabled', 'openai', 'azure_openai', 'ollama'], true)) {
+            $provider = 'disabled';
+        }
+        Database::connection()->prepare("UPDATE ai_provider_settings SET enabled=?,provider=?,model=?,endpoint=?,temperature=?,max_tokens=?,daily_request_limit=?,monthly_request_limit=?,monthly_cost_limit_usd=?,input_cost_per_million_tokens=?,output_cost_per_million_tokens=?,allowed_roles=?,redact_sensitive_data=?,approval_required_estimate=?,approval_required_customer_reply=?,approval_required_other=?,system_prompt=?,updated_by=?,updated_at=NOW() WHERE id=1")->execute([
+            isset($_POST['enabled']) ? 1 : 0,
+            $provider,
+            trim((string) ($_POST['model'] ?? '')),
+            trim((string) ($_POST['endpoint'] ?? '')),
+            max(0, min(2, (float) ($_POST['temperature'] ?? 0.2))),
+            max(64, min(8000, (int) ($_POST['max_tokens'] ?? 800))),
+            max(0, (int) ($_POST['daily_request_limit'] ?? 0)),
+            max(0, (int) ($_POST['monthly_request_limit'] ?? 0)),
+            max(0, (float) ($_POST['monthly_cost_limit_usd'] ?? 0)),
+            max(0, (float) ($_POST['input_cost_per_million_tokens'] ?? 0)),
+            max(0, (float) ($_POST['output_cost_per_million_tokens'] ?? 0)),
+            trim((string) ($_POST['allowed_roles'] ?? 'owner,administrator,office,estimator')),
+            isset($_POST['redact_sensitive_data']) ? 1 : 0,
+            isset($_POST['approval_required_estimate']) ? 1 : 0,
+            isset($_POST['approval_required_customer_reply']) ? 1 : 0,
+            isset($_POST['approval_required_other']) ? 1 : 0,
+            trim((string) ($_POST['system_prompt'] ?? '')),
+            Auth::id(),
         ]);
-        flash('success','AI provider settings updated.'); redirect('/portal/ai');
+        flash('success', 'AI governance and provider settings updated.');
+        redirect('/portal/ai');
     }
 
     public function savePrompt(): void
     {
-        Auth::requireRole('owner','administrator','office'); verify_csrf();
-        $name=trim((string)($_POST['name']??'')); $prompt=trim((string)($_POST['prompt_template']??''));
-        if($name===''||$prompt===''){flash('danger','Prompt name and template are required.');redirect('/portal/ai');}
-        Database::connection()->prepare("INSERT INTO ai_saved_prompts(name,prompt_template,version,created_by,created_at,updated_at) VALUES(?,?,1,?,NOW(),NOW()) ON DUPLICATE KEY UPDATE prompt_template=VALUES(prompt_template),version=version+1,updated_at=NOW()")->execute([$name,$prompt,Auth::id()]);
-        flash('success','Prompt saved.'); redirect('/portal/ai');
+        Auth::requireRole('owner', 'administrator', 'office');
+        verify_csrf();
+        $name = trim((string) ($_POST['name'] ?? ''));
+        $prompt = trim((string) ($_POST['prompt_template'] ?? ''));
+        if ($name === '' || $prompt === '') {
+            flash('danger', 'Prompt name and template are required.');
+            redirect('/portal/ai');
+        }
+        Database::connection()->prepare("INSERT INTO ai_saved_prompts(name,prompt_template,version,created_by,created_at,updated_at) VALUES(?,?,1,?,NOW(),NOW()) ON DUPLICATE KEY UPDATE prompt_template=VALUES(prompt_template),version=version+1,updated_at=NOW()")
+            ->execute([$name, $prompt, Auth::id()]);
+        flash('success', 'Prompt saved.');
+        redirect('/portal/ai');
     }
 
-    private function executeAndLog(AiProviderService $service,string $prompt,string $purpose,array $context): void
+    private function storeUsage(array $result, string $purpose, string $prompt): void
     {
-        try { $result=$service->ask($prompt,$purpose,$context); $this->storeUsage($result,$purpose,$prompt); $_SESSION['ai_answer']=$result['content']; $_SESSION['ai_prompt']=$prompt; }
-        catch(Throwable $e){ flash('danger','AI request failed: '.$e->getMessage()); }
-    }
-
-    private function storeUsage(array $result,string $purpose,string $prompt): void
-    {
-        Database::connection()->prepare("INSERT INTO ai_usage_logs(user_id,provider,model,purpose,prompt_hash,input_chars,output_chars,status,latency_ms,created_at) VALUES(?,?,?,?,?,?,?,?,?,NOW())")->execute([Auth::id(),$result['provider'],$result['model'],$purpose,hash('sha256',$prompt),$result['input_chars'],$result['output_chars'],'success',$result['latency_ms']]);
+        $pdo = Database::connection();
+        $settings = (new AiGovernanceService($pdo))->settings();
+        $cost = (new AiCostService())->estimate((int) $result['input_chars'], (int) $result['output_chars'], $settings);
+        $pdo->prepare("INSERT INTO ai_usage_logs(user_id,provider,model,purpose,prompt_hash,input_chars,output_chars,estimated_cost_usd,status,latency_ms,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,NOW())")
+            ->execute([Auth::id(), $result['provider'], $result['model'], $purpose, hash('sha256', $prompt), $result['input_chars'], $result['output_chars'], $cost, 'success', $result['latency_ms']]);
     }
 }

@@ -1,10 +1,10 @@
 {
   "product": "CastorWorks",
-  "version": "0.33.1",
-  "minimum_version": "0.33.0",
-  "migrations": ["database/migrate_phase33_0.sql", "database/migrate_phase33_1.sql"],
-  "php": ">=8.2",
-  "release_type": "feature",
-  "title": "AI Operations Assistant",
-  "cumulative_ai_foundation": true
+  "version": "0.33.2",
+  "baseline": "v0.33.1",
+  "release_name": "AI Governance and Draft Workflow",
+  "minimum_php": "8.2",
+  "migrations": ["database/migrate_phase33_2.sql"],
+  "source_patcher": "scripts/apply-release-0.33.2.php",
+  "breaking_changes": false
 }

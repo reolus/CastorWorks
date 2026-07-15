@@ -1,16 +1,94 @@
+<?php
+$canConfigure = \App\Core\Auth::can('owner', 'administrator');
+$statusClass = match ($health['status'] ?? 'warning') { 'ok' => 'success', 'failed' => 'danger', 'disabled' => 'secondary', default => 'warning' };
+?>
 <div class="d-flex justify-content-between align-items-start mb-4">
-  <div><h1 class="h3 mb-1">AI Assistant</h1><p class="text-muted mb-0">Operational analysis and reviewable drafting. Nothing is sent automatically.</p></div>
-  <span class="badge text-bg-<?=($health['status']??'disabled')==='ok'?'success':(($health['status']??'')==='warning'?'warning':'secondary')?>"><?=e($health['detail']??'Disabled')?></span>
+  <div><h1 class="h3 mb-1"><i class="fa-solid fa-wand-magic-sparkles me-2"></i>AI Assistant</h1><p class="text-muted mb-0">Ask operational questions using an optional aggregate business context.</p></div>
+  <span class="badge text-bg-<?=$statusClass?> p-2"><?=e($health['detail'] ?? 'Unknown')?></span>
 </div>
-<?php if($answer):?><div class="alert alert-light border shadow-sm"><strong><?=e($lastPrompt)?></strong><hr><div style="white-space:pre-wrap"><?=e($answer)?></div></div><?php endif?>
+
 <div class="row g-4">
- <div class="col-xl-7">
-  <div class="card card-body mb-4"><h2 class="h5">Ask CastorWorks</h2><form method="post" action="/portal/ai/ask"><?=csrf_field()?><textarea name="prompt" class="form-control mb-3" rows="5" maxlength="8000" required placeholder="Summarize today's operational risks..."><?=e($lastPrompt)?></textarea><div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="include_context" id="include_context" checked><label class="form-check-label" for="include_context">Include aggregate operational context</label></div><button class="btn btn-primary">Run assistant</button></form><form method="post" action="/portal/ai/daily-brief" class="d-inline ms-2"><?=csrf_field()?><button class="btn btn-outline-primary">Generate daily brief</button></form></div>
-  <div class="card card-body mb-4"><h2 class="h5">Create reviewable draft</h2><form method="post" action="/portal/ai/drafts" class="row g-3"><?=csrf_field()?><div class="col-md-4"><label class="form-label">Type</label><select name="draft_type" class="form-select"><option value="estimate">Estimate narrative</option><option value="customer_reply">Customer reply</option><option value="route_recommendation">Route recommendation</option><option value="staffing_recommendation">Staffing recommendation</option></select></div><div class="col-md-8"><label class="form-label">Reference</label><input name="reference" class="form-control" placeholder="Estimate #, customer, route date, etc."></div><div class="col-12"><label class="form-label">Grounded details</label><textarea name="details" class="form-control" rows="4" required></textarea></div><div class="col-12"><label class="form-label">Additional instruction</label><input name="instruction" class="form-control"></div><div class="col-12"><button class="btn btn-primary">Create draft</button></div></form></div>
-  <div class="card"><div class="card-header"><strong>Recent drafts</strong></div><div class="table-responsive"><table class="table mb-0"><thead><tr><th>Type</th><th>Reference</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody><?php foreach($drafts as $d):?><tr><td><?=e($d['draft_type'])?></td><td><?=e($d['reference_key'])?></td><td><span class="badge text-bg-<?=$d['status']==='approved'?'success':'secondary'?>"><?=e($d['status'])?></span></td><td><?=e($d['created_at'])?></td><td><?php if($d['status']==='draft' && $d['requires_approval']):?><form method="post" action="/portal/ai/drafts/<?=$d['id']?>/approve"><?=csrf_field()?><button class="btn btn-sm btn-success">Approve</button></form><?php endif?></td></tr><?php endforeach;if(!$drafts):?><tr><td colspan="5" class="text-muted">No drafts yet.</td></tr><?php endif?></tbody></table></div></div>
- </div>
- <div class="col-xl-5">
-  <?php if(in_array((string)(\App\Core\Auth::user()['role']??''),['owner','administrator'],true)):?><div class="card card-body mb-4"><h2 class="h5">Provider settings</h2><form method="post" action="/portal/ai/settings"><?=csrf_field()?><div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="enabled" id="ai_enabled" <?=$settings['enabled']?'checked':''?>><label class="form-check-label" for="ai_enabled">Enable AI</label></div><label class="form-label">Provider</label><select name="provider" class="form-select mb-3"><?php foreach(['disabled','openai','azure_openai','ollama'] as $p):?><option value="<?=$p?>" <?=$settings['provider']===$p?'selected':''?>><?=e($p)?></option><?php endforeach?></select><label class="form-label">Model</label><input name="model" class="form-control mb-3" value="<?=e($settings['model'])?>"><label class="form-label">Endpoint override</label><input name="endpoint" class="form-control mb-3" value="<?=e($settings['endpoint'])?>"><div class="row"><div class="col"><label class="form-label">Daily limit</label><input type="number" min="0" name="daily_request_limit" class="form-control" value="<?=e($settings['daily_request_limit']??0)?>"></div><div class="col"><label class="form-label">Monthly limit</label><input type="number" min="0" name="monthly_request_limit" class="form-control" value="<?=e($settings['monthly_request_limit']??0)?>"></div></div><label class="form-label mt-3">Allowed roles</label><input name="allowed_roles" class="form-control mb-3" value="<?=e($settings['allowed_roles']??'owner,administrator,office,estimator')?>"><div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="redact_sensitive_data" id="redact" <?=($settings['redact_sensitive_data']??1)?'checked':''?>><label class="form-check-label" for="redact">Redact sensitive data</label></div><label class="form-label">System prompt</label><textarea name="system_prompt" class="form-control mb-3" rows="5"><?=e($settings['system_prompt'])?></textarea><input type="hidden" name="temperature" value="<?=e($settings['temperature'])?>"><input type="hidden" name="max_tokens" value="<?=e($settings['max_tokens'])?>"><button class="btn btn-primary">Save settings</button></form></div><?php endif?>
-  <div class="card"><div class="card-header"><strong>Recent usage</strong></div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Purpose</th><th>Status</th><th>Latency</th></tr></thead><tbody><?php foreach($usage as $u):?><tr><td><?=e($u['purpose'])?></td><td><?=e($u['status'])?></td><td><?=e($u['latency_ms'])?> ms</td></tr><?php endforeach;if(!$usage):?><tr><td colspan="3" class="text-muted">No usage recorded.</td></tr><?php endif?></tbody></table></div></div>
- </div>
+  <div class="col-xl-8">
+    <div class="card card-body mb-4">
+      <form method="post" action="/portal/ai/ask">
+        <?=csrf_field()?>
+        <label class="form-label fw-semibold">Ask CastorWorks</label>
+        <textarea class="form-control" name="prompt" rows="6" maxlength="8000" required placeholder="Summarize today's operational risks and suggest the three most important actions."><?=e($lastPrompt)?></textarea>
+        <div class="d-flex justify-content-between align-items-center mt-3">
+          <div class="form-check"><input class="form-check-input" type="checkbox" name="include_context" value="1" id="aiContext" checked><label class="form-check-label" for="aiContext">Include aggregate operational context</label></div>
+          <button class="btn btn-primary"><i class="fa-solid fa-paper-plane me-1"></i>Run Assistant</button>
+        </div>
+        <small class="text-muted">Context excludes customer messages, addresses, files, and other free-form personal data.</small>
+      </form>
+    </div>
+
+    <?php if(is_string($answer) && $answer !== ''):?>
+      <div class="card card-body mb-4"><h2 class="h5">Response</h2><div style="white-space:pre-wrap"><?=e($answer)?></div></div>
+    <?php endif?>
+
+    <div class="card card-body mb-4">
+      <h2 class="h5">Create governed draft</h2>
+      <form method="post" action="/portal/ai/drafts" class="row g-3"><?=csrf_field()?>
+        <div class="col-md-4"><label class="form-label">Draft type</label><select class="form-select" name="draft_type"><option value="estimate">Estimate narrative</option><option value="customer_reply">Customer reply</option><option value="route_recommendation">Route recommendation</option><option value="staffing_recommendation">Staffing recommendation</option></select></div>
+        <div class="col-md-4"><label class="form-label">Reference</label><input class="form-control" name="reference" placeholder="Estimate #, customer, route, or date"></div>
+        <div class="col-md-4"><label class="form-label">Instruction</label><input class="form-control" name="instruction" placeholder="Tone or objective"></div>
+        <div class="col-12"><label class="form-label">Grounding details</label><textarea class="form-control" name="details" rows="4" maxlength="8000" required></textarea></div>
+        <div class="col-12 text-end"><button class="btn btn-outline-primary">Create reviewable draft</button></div>
+      </form>
+    </div>
+
+    <div class="card card-body mb-4">
+      <h2 class="h5">Draft approval queue</h2>
+      <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Created</th><th>Type / Reference</th><th>Status</th><th>Content</th><th>Actions</th></tr></thead><tbody>
+      <?php foreach($drafts as $draft):?><tr><td><?=e($draft['created_at'])?><br><small class="text-muted"><?=e($draft['created_by_name']??'System')?></small></td><td><?=e($draft['draft_type'])?><br><small><?=e($draft['reference_key'])?></small></td><td><span class="badge text-bg-<?=match($draft['status']){'approved'=>'success','rejected'=>'danger','used'=>'primary',default=>'warning'}?>"><?=e($draft['status'])?></span></td><td style="min-width:320px;white-space:pre-wrap"><?=e(mb_strimwidth((string)$draft['content'],0,600,'…'))?></td><td>
+      <?php if($draft['status']==='draft' && \App\Core\Auth::can('owner','administrator','office')):?><form class="mb-2" method="post" action="/portal/ai/drafts/<?=$draft['id']?>/approve"><?=csrf_field()?><button class="btn btn-sm btn-success">Approve</button></form><?php endif?>
+      <?php if(in_array($draft['status'],['draft','approved'],true) && \App\Core\Auth::can('owner','administrator','office')):?><form class="mb-2" method="post" action="/portal/ai/drafts/<?=$draft['id']?>/reject"><?=csrf_field()?><input class="form-control form-control-sm mb-1" name="reason" placeholder="Reason"><button class="btn btn-sm btn-outline-danger">Reject</button></form><?php endif?>
+      <?php if($draft['status']==='approved' || ($draft['status']==='draft' && !(int)$draft['requires_approval'])):?><form method="post" action="/portal/ai/drafts/<?=$draft['id']?>/use"><?=csrf_field()?><input class="form-control form-control-sm mb-1" name="target_type" value="<?=e($draft['draft_type'])?>"><input class="form-control form-control-sm mb-1" type="number" name="target_id" placeholder="Optional record ID"><button class="btn btn-sm btn-primary">Mark used / copy</button></form><?php endif?>
+      </td></tr><?php endforeach?>
+      <?php if(!$drafts):?><tr><td colspan="5" class="text-muted">No AI drafts have been created.</td></tr><?php endif?>
+      </tbody></table></div>
+    </div>
+
+    <div class="card card-body">
+      <h2 class="h5">Recent usage</h2>
+      <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Time</th><th>User</th><th>Provider</th><th>Status</th><th>Latency</th><th>Characters</th><th>Est. cost</th></tr></thead><tbody>
+      <?php foreach($usage as $row):?><tr><td><?=e($row['created_at'])?></td><td><?=e($row['user_name']??'System')?></td><td><?=e($row['provider'])?><br><small class="text-muted"><?=e($row['model'])?></small></td><td><span class="badge text-bg-<?=$row['status']==='success'?'success':'danger'?>"><?=e($row['status'])?></span></td><td><?=e($row['latency_ms'])?> ms</td><td><?=e($row['input_chars'])?> / <?=e($row['output_chars'])?></td><td>$<?=number_format((float)($row['estimated_cost_usd']??0),6)?></td></tr><?php endforeach?>
+      <?php if(!$usage):?><tr><td colspan="7" class="text-muted">No AI usage has been recorded.</td></tr><?php endif?>
+      </tbody></table></div>
+    </div>
+  </div>
+
+  <div class="col-xl-4">
+    <?php if($canConfigure):?>
+    <div class="card card-body mb-4">
+      <h2 class="h5">Provider settings</h2>
+      <form method="post" action="/portal/ai/settings">
+        <?=csrf_field()?>
+        <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" name="enabled" id="aiEnabled" <?=$settings['enabled']?'checked':''?>><label class="form-check-label" for="aiEnabled">Enable AI Assistant</label></div>
+        <label class="form-label">Provider</label><select class="form-select mb-3" name="provider"><?php foreach(['disabled'=>'Disabled','openai'=>'OpenAI','azure_openai'=>'Azure OpenAI','ollama'=>'Ollama / local'] as $key=>$label):?><option value="<?=$key?>" <?=$settings['provider']===$key?'selected':''?>><?=$label?></option><?php endforeach?></select>
+        <label class="form-label">Model or deployment label</label><input class="form-control mb-3" name="model" value="<?=e($settings['model'])?>" placeholder="gpt-4.1-mini or llama3.2">
+        <label class="form-label">Custom endpoint</label><input class="form-control mb-3" name="endpoint" value="<?=e($settings['endpoint'])?>" placeholder="Optional; required for Ollama">
+        <div class="row g-2 mb-3"><div class="col"><label class="form-label">Temperature</label><input class="form-control" type="number" step="0.1" min="0" max="2" name="temperature" value="<?=e($settings['temperature'])?>"></div><div class="col"><label class="form-label">Max tokens</label><input class="form-control" type="number" min="64" max="4000" name="max_tokens" value="<?=e($settings['max_tokens'])?>"></div></div>
+        <div class="row g-2 mb-3"><div class="col"><label class="form-label">Daily requests</label><input class="form-control" type="number" min="0" name="daily_request_limit" value="<?=e($settings['daily_request_limit']??0)?>"></div><div class="col"><label class="form-label">Monthly requests</label><input class="form-control" type="number" min="0" name="monthly_request_limit" value="<?=e($settings['monthly_request_limit']??0)?>"></div></div>
+        <label class="form-label">Monthly cost limit (USD)</label><input class="form-control mb-3" type="number" min="0" step="0.01" name="monthly_cost_limit_usd" value="<?=e($settings['monthly_cost_limit_usd']??0)?>">
+        <div class="row g-2 mb-3"><div class="col"><label class="form-label">Input $ / 1M tokens</label><input class="form-control" type="number" min="0" step="0.000001" name="input_cost_per_million_tokens" value="<?=e($settings['input_cost_per_million_tokens']??0)?>"></div><div class="col"><label class="form-label">Output $ / 1M tokens</label><input class="form-control" type="number" min="0" step="0.000001" name="output_cost_per_million_tokens" value="<?=e($settings['output_cost_per_million_tokens']??0)?>"></div></div>
+        <label class="form-label">Allowed roles</label><input class="form-control mb-3" name="allowed_roles" value="<?=e($settings['allowed_roles']??'owner,administrator,office,estimator')?>">
+        <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="redact_sensitive_data" id="redactAi" <?=($settings['redact_sensitive_data']??1)?'checked':''?>><label class="form-check-label" for="redactAi">Redact sensitive data</label></div>
+        <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="approval_required_estimate" id="approveEstimate" <?=($settings['approval_required_estimate']??1)?'checked':''?>><label class="form-check-label" for="approveEstimate">Require estimate-draft approval</label></div>
+        <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="approval_required_customer_reply" id="approveReply" <?=($settings['approval_required_customer_reply']??1)?'checked':''?>><label class="form-check-label" for="approveReply">Require customer-reply approval</label></div>
+        <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="approval_required_other" id="approveOther" <?=($settings['approval_required_other']??0)?'checked':''?>><label class="form-check-label" for="approveOther">Require approval for internal recommendations</label></div>
+        <label class="form-label">System instructions</label><textarea class="form-control mb-3" rows="5" name="system_prompt"><?=e($settings['system_prompt'])?></textarea>
+        <button class="btn btn-outline-primary w-100">Save provider settings</button>
+      </form>
+    </div>
+    <?php endif?>
+
+    <div class="card card-body">
+      <h2 class="h5">Saved prompts</h2>
+      <?php foreach($prompts as $prompt):?><button type="button" class="btn btn-sm btn-outline-secondary text-start mb-2 ai-prompt-button" data-prompt="<?=e($prompt['prompt_template'])?>"><?=e($prompt['name'])?></button><?php endforeach?>
+      <?php if(!$prompts):?><p class="text-muted">No saved prompts.</p><?php endif?>
+      <?php if(\App\Core\Auth::can('owner','administrator','office')):?><hr><form method="post" action="/portal/ai/prompts"><?=csrf_field()?><input class="form-control mb-2" name="name" placeholder="Prompt name" required><textarea class="form-control mb-2" name="prompt_template" rows="3" placeholder="Prompt text" required></textarea><button class="btn btn-sm btn-outline-primary">Save prompt</button></form><?php endif?>
+    </div>
+  </div>
 </div>
+<script>document.querySelectorAll('.ai-prompt-button').forEach(function(b){b.addEventListener('click',function(){var t=document.querySelector('textarea[name="prompt"]');if(t){t.value=b.dataset.prompt||'';t.focus();}});});</script>
