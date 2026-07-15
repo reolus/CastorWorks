@@ -15,7 +15,7 @@ final class HealthController
    $detail=$item['detail'].($item['latency_ms']!==null?' ('.$item['latency_ms'].' ms)':'');
    $checks[]=['name'=>$item['name'],'status'=>$status,'detail'=>$detail,'last_tested_at'=>$item['last_tested_at']??null];
   }
-  $checks[]=(new \App\Services\AiProviderService(\App\Core\Database::connection()))->healthCheck(); $checks[]=(new \App\Services\AiProviderService(\App\Core\Database::connection()))->healthCheck(); $checks[]=['name'=>'PHP','status'=>version_compare(PHP_VERSION,'8.2.0','>=')?'ok':'warning','detail'=>PHP_VERSION];
+  $checks[]=['name'=>'PHP','status'=>version_compare(PHP_VERSION,'8.2.0','>=')?'ok':'warning','detail'=>PHP_VERSION];
   View::render('portal/health/index',['title'=>'System Health','checks'=>$checks],'portal');
  }
 }

@@ -1,9 +1,10 @@
 {
   "product": "CastorWorks",
-  "version": "0.32.6",
-  "minimum_version": "0.32.5",
-  "migration": "database/migrate_phase32_6.sql",
+  "version": "0.33.1",
+  "minimum_version": "0.33.0",
+  "migrations": ["database/migrate_phase33_0.sql", "database/migrate_phase33_1.sql"],
   "php": ">=8.2",
   "release_type": "feature",
-  "title": "Operational Analytics & Route Intelligence"
+  "title": "AI Operations Assistant",
+  "cumulative_ai_foundation": true
 }

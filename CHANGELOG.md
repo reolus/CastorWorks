@@ -1,7 +1,10 @@
 # CastorWorks Changelog
 
-## 0.32.6
-- Added route analytics, crew and technician daily scorecards.
-- Added revenue-per-mile, revenue-per-route-hour, drive/work/idle metrics, and fuel estimates.
-- Added operational analytics health monitoring and a scheduled analytics worker.
-- Completed the Intelligent Operations phase.
+## 0.33.1
+
+- Added AI daily operations briefs and operational record lookup.
+- Added reviewable estimate, customer-response, route, and staffing drafts.
+- Added approval controls for customer-facing AI drafts.
+- Added sensitive-data redaction and daily/monthly request limits.
+- Added prompt version increments.
+- Included the missing 0.33.0 AI foundation files for compatibility with the public tag.
